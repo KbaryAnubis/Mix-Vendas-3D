@@ -1,0 +1,102 @@
+[
+  {
+    "numero": 1,
+    "arquivo": "mv3d_inicio.png",
+    "funcao": "inicio"
+  },
+  {
+    "numero": 2,
+    "arquivo": "mv3d_nova_venda.png",
+    "funcao": "nova_venda"
+  },
+  {
+    "numero": 3,
+    "arquivo": "mv3d_vendas.png",
+    "funcao": "vendas"
+  },
+  {
+    "numero": 4,
+    "arquivo": "mv3d_fechamento.png",
+    "funcao": "fechamento"
+  },
+  {
+    "numero": 5,
+    "arquivo": "mv3d_mais.png",
+    "funcao": "mais"
+  },
+  {
+    "numero": 6,
+    "arquivo": "mv3d_produtos.png",
+    "funcao": "produtos"
+  },
+  {
+    "numero": 7,
+    "arquivo": "mv3d_nomes.png",
+    "funcao": "nomes"
+  },
+  {
+    "numero": 8,
+    "arquivo": "mv3d_maquininhas.png",
+    "funcao": "maquininhas"
+  },
+  {
+    "numero": 9,
+    "arquivo": "mv3d_importar_exportar.png",
+    "funcao": "importar_exportar"
+  },
+  {
+    "numero": 10,
+    "arquivo": "mv3d_atualizar_sistema.png",
+    "funcao": "atualizar_sistema"
+  },
+  {
+    "numero": 11,
+    "arquivo": "mv3d_editar.png",
+    "funcao": "editar"
+  },
+  {
+    "numero": 12,
+    "arquivo": "mv3d_excluir.png",
+    "funcao": "excluir"
+  },
+  {
+    "numero": 13,
+    "arquivo": "mv3d_buscar.png",
+    "funcao": "buscar"
+  },
+  {
+    "numero": 14,
+    "arquivo": "mv3d_calendario.png",
+    "funcao": "calendario"
+  },
+  {
+    "numero": 15,
+    "arquivo": "mv3d_dinheiro_moedas.png",
+    "funcao": "dinheiro_moedas"
+  },
+  {
+    "numero": 16,
+    "arquivo": "mv3d_tarifas.png",
+    "funcao": "tarifas"
+  },
+  {
+    "numero": 17,
+    "arquivo": "mv3d_ver_mais.png",
+    "funcao": "ver_mais"
+  },
+  {
+    "numero": 18,
+    "arquivo": "mv3d_pessoas.png",
+    "funcao": "pessoas"
+  },
+  {
+    "numero": 19,
+    "arquivo": "mv3d_dinheiro_notas.png",
+    "funcao": "dinheiro_notas"
+  },
+  {
+    "numero": 20,
+    "arquivo": "mv3d_cartao_bancario.png",
+    "funcao": "cartao_bancario"
+  }
+]

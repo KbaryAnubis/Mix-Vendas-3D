@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="v19_bg_deep">#FF110D1B</color>
+    <color name="v19_surface_dark">#FF1C152A</color>
+    <color name="v19_purple_primary">#FFA478F4</color>
+    <color name="v19_launcher_bg">#FF140426</color>
+</resources>

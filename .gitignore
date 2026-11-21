@@ -1,0 +1,47 @@
+*.iml
+
+# Gradle e compilação
+.gradle/
+.kotlin/
+build/
+**/build/
+.externalNativeBuild/
+.cxx/
+captures/
+
+# Android Studio e IntelliJ
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# Configurações locais
+local.properties
+
+# Segredos e credenciais
+.env
+.env.*
+!.env.example
+debug.keystore
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+signing.properties
+*signing*.txt
+*password*.txt
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+Pastas e arquivos locais que não devem ser publicados
+
+.idea/
+.aistudio/
+*.zip

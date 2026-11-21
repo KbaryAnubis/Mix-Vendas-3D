@@ -1,0 +1,6 @@
+{
+  "name": "MIX VENDAS 3D",
+  "description": "Aplicativo Android nativo offline em Kotlin e Jetpack Compose para o projeto MIX VENDAS 3D.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,124 @@
+{
+  "project": "MIX VENDAS 3D",
+  "version": "Prévia individual F2-C",
+  "assets": "20 PNGs originais + novo PIX roxo em PNG transparente (apenas prévia)",
+  "scope": "ajustes individuais por posição ou por desenho",
+  "overrides": {
+    "vender|dinheiro_notas|payment|1": 160,
+    "vendas|cartao_bancario|small|1": 180,
+    "fechamento|maquininhas|small|1": 220,
+    "fechamento|cartao_bancario|small|2": 220,
+    "fechamento|cartao_bancario|small|1": 220,
+    "fechamento|pix|pixClosing|1": 220,
+    "fechamento|dinheiro_notas|small|1": 220,
+    "mais|maquininhas|more|1": 200,
+    "mais|importar_exportar|more|1": 200,
+    "mais|atualizar_sistema|more|1": 200,
+    "mais|produtos|more|1": 200,
+    "produtos|editar|action|1": 160,
+    "produtos|excluir|action|1": 160,
+    "produtos|editar|action|2": 160,
+    "produtos|excluir|action|2": 160,
+    "produtos|excluir|action|3": 160,
+    "produtos|editar|action|3": 160,
+    "nomes|editar|action|1": 160,
+    "nomes|editar|action|2": 160,
+    "nomes|editar|action|3": 160,
+    "nomes|excluir|action|3": 160,
+    "nomes|excluir|action|2": 160,
+    "nomes|excluir|action|1": 160,
+    "maquininhas|maquininhas|section|1": 200,
+    "maquininhas|maquininhas|list|1": 160,
+    "maquininhas|maquininhas|list|2": 160,
+    "maquininhas|editar|action|1": 160,
+    "maquininhas|editar|action|2": 160,
+    "maquininhas|excluir|action|1": 160,
+    "maquininhas|excluir|action|2": 160,
+    "maquininhas|cartao_bancario|section|1": 180,
+    "maquininhas|cartao_bancario|list|1": 170,
+    "maquininhas|cartao_bancario|list|2": 170,
+    "maquininhas|cartao_bancario|list|3": 170,
+    "atualizar|atualizar_sistema|section|1": 180,
+    "importar|importar_exportar|section|1": 180,
+    "importar|importar_exportar|section|2": 180
+  },
+  "globalOverrides": {
+    "nova_venda": 230,
+    "inicio": 230,
+    "mais": 230,
+    "fechamento": 230,
+    "vendas": 230,
+    "dinheiro_moedas": 200,
+    "tarifas": 200,
+    "dinheiro_notas": 200,
+    "pessoas": 200,
+    "nomes": 200,
+    "ver_mais": 230,
+    "produtos": 170,
+    "buscar": 150,
+    "cartao_bancario": 155,
+    "pix": 200,
+    "calendario": 220,
+    "editar": 140,
+    "excluir": 140
+  },
+  "baseSizes": {
+    "nav": [
+      30,
+      36
+    ],
+    "metric": [
+      34,
+      52
+    ],
+    "cta": [
+      34,
+      40
+    ],
+    "more": [
+      56,
+      64
+    ],
+    "section": [
+      38,
+      48
+    ],
+    "avatar": [
+      30,
+      40
+    ],
+    "action": [
+      26,
+      36
+    ],
+    "small": [
+      24,
+      32
+    ],
+    "payment": [
+      30,
+      44
+    ],
+    "pixPayment": [
+      20,
+      28
+    ],
+    "pixHistory": [
+      20,
+      28
+    ],
+    "pixClosing": [
+      19,
+      28
+    ],
+    "list": [
+      30,
+      40
+    ],
+    "empty": [
+      48,
+      64
+    ]
+  },
+  "report": "MIX VENDAS 3D — Ajustes de tamanho dos ícones (prévia HTML)\nValores aproximados em dp, confirmar no Compose antes de aplicar.\n\nAJUSTES POR DESENHO:\n- Buscar: 150% (todas as ocorrências, salvo substituição individual)\n- Calendário: 220% (todas as ocorrências, salvo substituição individual)\n- Cartão: 155% (todas as ocorrências, salvo substituição individual)\n- Moedas: 200% (todas as ocorrências, salvo substituição individual)\n- Cédulas: 200% (todas as ocorrências, salvo substituição individual)\n- Editar: 140% (todas as ocorrências, salvo substituição individual)\n- Excluir: 140% (todas as ocorrências, salvo substituição individual)\n- Fechamento: 230% (todas as ocorrências, salvo substituição individual)\n- Início: 230% (todas as ocorrências, salvo substituição individual)\n- Mais: 230% (todas as ocorrências, salvo substituição individual)\n- Nomes: 200% (todas as ocorrências, salvo substituição individual)\n- Nova venda: 230% (todas as ocorrências, salvo substituição individual)\n- Pessoas: 200% (todas as ocorrências, salvo substituição individual)\n- Pix (QR Code): 200% (todas as ocorrências, salvo substituição individual)\n- Produtos: 170% (todas as ocorrências, salvo substituição individual)\n- Tarifas: 200% (todas as ocorrências, salvo substituição individual)\n- VENDAS: 230% (todas as ocorrências, salvo substituição individual)\n- Ver mais: 230% (todas as ocorrências, salvo substituição individual)\n\nAJUSTES POR POSIÇÃO:\n- Atualizar sistema | Atualizar sistema | section #1: 180% de 48dp ≈ 86dp\n- Fechamento | Cartão | small #1: 220% de 32dp ≈ 70dp\n- Fechamento | Cartão | small #2: 220% de 32dp ≈ 70dp\n- Fechamento | Cédulas | small #1: 220% de 32dp ≈ 70dp\n- Fechamento | Maquininhas | small #1: 220% de 32dp ≈ 70dp\n- Fechamento | Pix (QR Code) | pixClosing #1: 220% de 28dp ≈ 62dp\n- Importar/exportar | Importar/exportar | section #1: 180% de 48dp ≈ 86dp\n- Importar/exportar | Importar/exportar | section #2: 180% de 48dp ≈ 86dp\n- Mais | Atualizar sistema | more #1: 200% de 64dp ≈ 128dp\n- Mais | Importar/exportar | more #1: 200% de 64dp ≈ 128dp\n- Mais | Maquininhas | more #1: 200% de 64dp ≈ 128dp\n- Mais | Produtos | more #1: 200% de 64dp ≈ 128dp\n- Maquininhas | Cartão | list #1: 170% de 40dp ≈ 68dp\n- Maquininhas | Cartão | list #2: 170% de 40dp ≈ 68dp\n- Maquininhas | Cartão | list #3: 170% de 40dp ≈ 68dp\n- Maquininhas | Cartão | section #1: 180% de 48dp ≈ 86dp\n- Maquininhas | Editar | action #1: 160% de 36dp ≈ 58dp\n- Maquininhas | Editar | action #2: 160% de 36dp ≈ 58dp\n- Maquininhas | Excluir | action #1: 160% de 36dp ≈ 58dp\n- Maquininhas | Excluir | action #2: 160% de 36dp ≈ 58dp\n- Maquininhas | Maquininhas | list #1: 160% de 40dp ≈ 64dp\n- Maquininhas | Maquininhas | list #2: 160% de 40dp ≈ 64dp\n- Maquininhas | Maquininhas | section #1: 200% de 48dp ≈ 96dp\n- Nomes | Editar | action #1: 160% de 36dp ≈ 58dp\n- Nomes | Editar | action #2: 160% de 36dp ≈ 58dp\n- Nomes | Editar | action #3: 160% de 36dp ≈ 58dp\n- Nomes | Excluir | action #1: 160% de 36dp ≈ 58dp\n- Nomes | Excluir | action #2: 160% de 36dp ≈ 58dp\n- Nomes | Excluir | action #3: 160% de 36dp ≈ 58dp\n- Produtos | Editar | action #1: 160% de 36dp ≈ 58dp\n- Produtos | Editar | action #2: 160% de 36dp ≈ 58dp\n- Produtos | Editar | action #3: 160% de 36dp ≈ 58dp\n- Produtos | Excluir | action #1: 160% de 36dp ≈ 58dp\n- Produtos | Excluir | action #2: 160% de 36dp ≈ 58dp\n- Produtos | Excluir | action #3: 160% de 36dp ≈ 58dp\n- VENDAS | Cartão | small #1: 180% de 32dp ≈ 58dp\n- Nova venda | Cédulas | payment #1: 160% de 44dp ≈ 70dp\n\nObservação: os 20 PNGs originais permanecem inalterados. PIX é o vetor QR Code usado no app."
+}

@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MIX VENDAS 3D</string>
+
+    <!-- Etapa 1 (preservada para diagnóstico / testes) -->
+    <string name="stage1_badge">ETAPA 1 DE 9 · NATIVO OFFLINE</string>
+    <string name="stage1_ready_title">MIX VENDAS 3D — Estrutura inicial pronta</string>
+    <string name="stage1_ready_subtitle">Base nativa em Kotlin + Jetpack Compose + Material 3 + Room SQLite operando 100% offline.</string>
+    <string name="stage1_specs_title">Diagnóstico técnico</string>
+    <string name="stage1_spec_package_label">ID do pacote</string>
+    <string name="stage1_spec_sdk_label">SDK mínimo / alvo</string>
+    <string name="stage1_spec_offline_label">Conectividade</string>
+    <string name="stage1_spec_offline_value">100% offline (sem permissão INTERNET)</string>
+    <string name="stage1_spec_db_label">Banco local (Room)</string>
+    <string name="stage1_spec_db_empty">Ativo e vazio (sem dados de exemplo)</string>
+    <string name="stage1_pref_section_title">Teste de persistência local (Room)</string>
+    <string name="stage1_pref_section_desc">Salve um valor na tabela de preferências, feche o aplicativo e reabra para confirmar a gravação em SQLite.</string>
+    <string name="stage1_pref_key_label">Chave: %1$s</string>
+    <string name="stage1_pref_input_label">Valor da preferência</string>
+    <string name="stage1_pref_input_placeholder">Ex.: Diagnostico OK</string>
+    <string name="stage1_pref_save">Salvar no Room</string>
+    <string name="stage1_pref_clear">Limpar</string>
+    <string name="stage1_pref_current_label">Valor persistido no SQLite</string>
+    <string name="stage1_pref_none">Nenhum valor salvo ainda (banco vazio)</string>
+    <string name="stage1_pref_updated_at">Atualizado em %1$s</string>
+    <string name="stage1_pref_count">Registros na tabela preferences: %1$d</string>
+    <string name="stage1_wallpaper_desc">Fundo oficial do castelo roxo</string>
+    <string name="stage1_icon_desc">Logotipo oficial MIX VENDAS 3D</string>
+
+    <!-- Etapa 2A — Navegação principal e Shell V19 -->
+    <string name="nav_home">Início</string>
+    <string name="nav_sell">Vender</string>
+    <string name="nav_sales">VENDAS</string>
+    <string name="nav_closing">Fechamento</string>
+    <string name="nav_more">Mais</string>
+    <string name="top_new_sale_cta">💵 NOVA VENDA</string>
+    <string name="top_new_sale_cd">Ir para tela Vender</string>
+    <string name="back_cd">Voltar</string>
+
+    <!-- Banner de prévia em memória -->
+    <string name="preview_banner_title">Prévia em memória (%1$d vendas demonstrativas)</string>
+    <string name="preview_banner_subtitle">Somente visualização da interface · nada gravado no Room</string>
+    <string name="preview_banner_clear">Ocultar prévia</string>
+    <string name="preview_banner_restore">Mostrar prévia</string>
+
+    <!-- Tela Início -->
+    <string name="home_new_sale_label">Nova venda</string>
+    <string name="home_metric_total_sold">Total vendido</string>
+    <string name="home_metric_fees">Tarifas</string>
+    <string name="home_metric_total_net">Total líquido</string>
+    <string name="home_metric_sales_count">Total de vendas</string>
+    <string name="home_people_card_title">Vendas por pessoa</string>
+    <string name="home_people_more_action">Ver mais</string>
+    <string name="home_people_empty_title">Nenhuma venda registrada ainda.</string>
+    <string name="home_people_empty_subtitle">Os valores individuais líquidos e a contagem de vendas aparecerão aqui automaticamente.</string>
+    <string name="home_period_overline">RESUMO DO PERÍODO</string>
+    <string name="home_period_title">Suas vendas</string>
+    <string name="home_hero_label">Valor total vendido</string>
+    <string name="home_people_title">Quanto cada pessoa recebe</string>
+    <string name="home_people_subtitle">Valores por Pessoa</string>
+    <string name="home_person_net_sub">Total individual líquido</string>
+    <string name="home_people_more">Ver mais (%1$d pessoas)</string>
+    <string name="home_people_less">Ver menos</string>
+    <string name="home_daily_title">Vendas por Dia</string>
+    <string name="home_daily_view_all">Ver todos →</string>
+    <string name="home_monthly_title">Total vendido por mês</string>
+
+    <!-- Tela Vender -->
+    <string name="sell_title">Nova venda</string>
+    <string name="sell_edit_title">Editar venda</string>
+    <string name="sell_edit_banner_title">Editando venda</string>
+    <string name="sell_cancel_edit_action">Cancelar edição</string>
+    <string name="sell_subtitle">Estrutura visual do lançamento de múltiplos itens.</string>
+    <string name="sell_step_products">1. Produtos vendidos</string>
+    <string name="sell_choose_products">Escolher produtos</string>
+    <string name="sell_no_products">Nenhum produto selecionado. Toque em Escolher produtos para começar.</string>
+    <string name="sell_summary_total_label">Total da venda</string>
+    <string name="sell_final_section">Valor final e desconto</string>
+    <string name="sell_subtotal_label">Subtotal dos produtos</string>
+    <string name="sell_discount_label">Desconto aplicado</string>
+    <string name="sell_final_input_label">Valor final da venda (R$)</string>
+    <string name="sell_final_helper">Altere somente se concedeu desconto. O sistema recalcula cada pessoa e as tarifas sobre os valores com desconto.</string>
+    <string name="sell_discount_target_label">Onde aplicar o desconto?</string>
+    <string name="sell_discount_prop">Distribuir proporcionalmente entre os produtos</string>
+    <string name="sell_note_label">Observação (opcional)</string>
+    <string name="sell_note_placeholder">Observação sobre a venda</string>
+    <string name="sell_step_payment">2. Forma de pagamento</string>
+    <string name="sell_step_split">3. Divisão automática por produto</string>
+    <string name="sell_split_empty">Selecione um ou mais produtos para calcular a divisão.</string>
+    <string name="sell_machine_label">Maquininha utilizada</string>
+    <string name="sell_brand_label">Bandeira do cartão</string>
+    <string name="sell_installments_label">Parcelamento</string>
+    <string name="sell_save_action">Registrar venda</string>
+    <string name="sell_saving_action">Salvando venda...</string>
+    <string name="sell_save_changes_action">Salvar alterações</string>
+    <string name="sell_saving_changes_action">Salvando alterações...</string>
+
+    <!-- Etapa V2-5B1 — Janela Selecionar produtos -->
+    <string name="product_picker_title">Selecionar produtos</string>
+    <string name="product_picker_subtitle">Escolha os produtos e ajuste as quantidades.</string>
+    <string name="product_picker_close_cd">Fechar seleção</string>
+    <string name="product_picker_search_placeholder">Buscar produtos...</string>
+    <string name="product_picker_clear_search_cd">Limpar pesquisa</string>
+    <string name="product_picker_empty_catalog">Nenhum produto disponível. Cadastre produtos em Mais → Produtos.</string>
+    <string name="product_picker_empty_search">Nenhum produto encontrado.</string>
+    <string name="product_picker_historical_badge">Da venda (histórico preservado)</string>
+    <string name="product_picker_subtotal_label">Subtotal</string>
+    <string name="product_picker_done_action">Concluir seleção</string>
+
+    <!-- Etapa V2-5B2 — Janela Selecionar maquininha -->
+    <string name="machine_picker_title">Selecionar maquininha</string>
+    <string name="machine_picker_subtitle_debit">Escolha a maquininha para receber no débito.</string>
+    <string name="machine_picker_subtitle_credit">Escolha uma maquininha habilitada para crédito.</string>
+    <string name="machine_picker_close_cd">Fechar seleção de maquininha</string>
+    <string name="machine_picker_search_placeholder">Buscar maquininha...</string>
+    <string name="machine_picker_clear_search_cd">Limpar pesquisa</string>
+    <string name="machine_picker_empty_catalog">Você ainda não possui maquininhas cadastradas. Cadastre uma em Mais → Maquininhas.</string>
+    <string name="machine_picker_empty_credit">Nenhuma maquininha disponível para crédito. Ative o crédito em Mais → Maquininhas.</string>
+    <string name="machine_picker_empty_search">Nenhuma maquininha encontrada.</string>
+    <string name="machine_picker_historical_badge">Da venda — histórico preservado</string>
+    <string name="machine_picker_selected_cd">Maquininha selecionada</string>
+
+    <!-- Tela VENDAS -->
+    <string name="sales_title">VENDAS</string>
+    <string name="sales_subtitle">Histórico detalhado gravado localmente no Room</string>
+    <string name="sales_summary_title">Resumo do período</string>
+    <string name="sales_total_gross">Total bruto</string>
+    <string name="sales_total_net">Total líquido</string>
+    <string name="sales_people_net_title">Valores líquidos por pessoa</string>
+    <string name="sales_filters_title">Filtros automáticos</string>
+    <string name="sales_search_placeholder">Buscar por produto, observação...</string>
+    <string name="sales_search_clear_cd">Limpar pesquisa</string>
+    <string name="sales_filter_all_methods">Todas as formas</string>
+    <string name="sales_subtotal_products">Subtotal dos produtos</string>
+    <string name="sales_total_charged">Total cobrado</string>
+    <string name="sales_payment_method_label">Forma de pagamento</string>
+    <string name="sales_people_section_title">Líquido total de cada pessoa</string>
+    <string name="sales_person_individual_net">Líquido individual</string>
+    <string name="sales_empty_title">Nenhuma venda registrada ainda</string>
+    <string name="sales_empty_subtitle">As vendas salvas na aba Vender aparecem aqui com todos os valores reais persistidos.</string>
+    <string name="sales_empty_cta">Registrar primeira venda</string>
+    <string name="sales_filter_empty_title">Nenhuma venda encontrada para os filtros selecionados.</string>
+    <string name="sales_edit_action">Editar</string>
+    <string name="sales_delete_action">Excluir</string>
+    <string name="sales_delete_dialog_title">Excluir venda?</string>
+    <string name="sales_delete_dialog_message">Esta ação excluirá permanentemente esta venda e seus registros financeiros. Não será possível desfazer.</string>
+    <string name="sales_delete_cancel_action">Cancelar</string>
+    <string name="sales_delete_confirm_action">Excluir venda</string>
+    <string name="sales_delete_in_progress">Excluindo...</string>
+
+    <!-- Tela Fechamento -->
+    <string name="closing_title">Fechamento</string>
+    <string name="closing_overline">FECHAMENTO DO PERÍODO</string>
+    <string name="closing_heading">Conferir valores</string>
+    <string name="closing_period_label">Período</string>
+    <string name="closing_total_sold_label">Total vendido</string>
+    <string name="closing_original_subtotal_label">Subtotal original</string>
+    <string name="closing_discounts_label">Descontos concedidos</string>
+    <string name="closing_fees_label">Tarifas</string>
+    <string name="closing_net_label">Líquido</string>
+    <string name="closing_people_title">Quanto cada pessoa recebe</string>
+    <string name="closing_individual_title">Conferência individual</string>
+    <string name="closing_individual_gross_label">Parte bruta</string>
+    <string name="closing_individual_fees_label">Tarifas</string>
+    <string name="closing_individual_net_label">Líquido</string>
+    <string name="closing_payments_title">Por forma de pagamento</string>
+    <string name="closing_machines_title">Maquininhas e tarifas</string>
+    <string name="closing_machines_subtitle">Taxas aplicadas, movimentação e líquido no cartão.</string>
+    <string name="closing_expand_machines_cd">Expandir maquininhas e tarifas</string>
+    <string name="closing_collapse_machines_cd">Recolher maquininhas e tarifas</string>
+    <string name="closing_export_csv_action">Exportar relatório CSV</string>
+    <string name="closing_export_csv_in_progress">Preparando e salvando CSV…</string>
+    <string name="closing_export_csv_dialog_title">Exportar vendas</string>
+    <string name="closing_export_csv_dialog_subtitle">Selecione o formato de planilha compatível com Excel para o período atual do fechamento:</string>
+    <string name="closing_export_csv_cancel">Cancelar</string>
+    <string name="closing_export_csv_continue">Continuar</string>
+    <string name="closing_export_csv_note">Exporta somente as vendas reais do período selecionado em Fechamento no formato CSV compatível com Excel.</string>
+
+    <!-- Tela Mais -->
+    <string name="more_title">Mais opções</string>
+    <string name="more_subtitle">Acessos de cadastros, conferência diária, backup local e atualização interna do histórico.</string>
+    <string name="more_footer_note">Todos os módulos de cadastro, conferência diária, exportação CSV, backup JSON e atualização interna operam 100% offline no aparelho.</string>
+    <string name="mais_card_products_title">Produtos</string>
+    <string name="mais_card_products_desc">Cadastrar e gerenciar produtos</string>
+    <string name="mais_card_names_title">Nomes</string>
+    <string name="mais_card_names_desc">Cadastrar os participantes das vendas</string>
+    <string name="mais_card_machines_title">Maquininhas</string>
+    <string name="mais_card_machines_desc">Gerenciar bandeiras e tarifas</string>
+    <string name="mais_card_import_export_title">Importar / exportar</string>
+    <string name="mais_card_import_export_desc">Backup JSON, restauração e CSV</string>
+    <string name="mais_card_update_system_title">Atualizar sistema</string>
+    <string name="mais_card_update_system_desc">Revisar dados internos das vendas</string>
+
+    <!-- Etapa V2-2 — Tela Cadastro de nomes -->
+    <string name="names_header_title">Cadastro de nomes</string>
+    <string name="names_create_card_title">Cadastrar participante</string>
+    <string name="names_edit_card_title">Editar participante</string>
+    <string name="names_input_label">Nome da pessoa</string>
+    <string name="names_input_placeholder">Ex.: João, Maria, Equipe 1</string>
+    <string name="names_add_action">Adicionar pessoa</string>
+    <string name="names_save_changes_action">Salvar nome</string>
+    <string name="names_cancel_edit_action">Cancelar</string>
+    <string name="names_about_card_title">Sobre os participantes</string>
+    <string name="names_about_card_body">Cadastre as pessoas que participam das vendas para distribuir os valores e acompanhar o líquido de cada uma.</string>
+    <string name="names_list_card_title">Nomes cadastrados</string>
+    <string name="names_row_default_subtitle">Editar ou excluir</string>
+    <string name="names_row_linked_single">Vinculada a 1 produto</string>
+    <string name="names_row_linked_plural">Vinculada a %1$d produtos</string>
+    <string name="names_empty_message">Nenhuma pessoa cadastrada ainda. Adicione os participantes acima para montar a divisão dos produtos.</string>
+
+    <!-- Etapa V2-3 — Tela Cadastro de produtos -->
+    <string name="products_header_title">Cadastro de produtos</string>
+    <string name="products_create_title">Cadastro de produtos</string>
+    <string name="products_edit_title">Editar produto</string>
+    <string name="products_name_label">Nome do produto</string>
+    <string name="products_name_placeholder">Ex.: Pastel, Refrigerante, Combo</string>
+    <string name="products_price_label">Preço de venda (R$)</string>
+    <string name="products_price_helper">Centavos formatados automaticamente durante a digitação.</string>
+    <string name="products_participants_title">Participantes da venda — valores em R$</string>
+    <string name="products_participants_helper">Você define o valor exato que cada participante recebe. Não utilizamos porcentagens para a divisão do produto.</string>
+    <string name="products_participant_value_label">Valor (R$)</string>
+    <string name="products_split_balance_hint">O total distribuído deverá ser igual ao preço do produto para salvar.</string>
+    <string name="products_fee_mode_label">Responsabilidade de tarifa</string>
+    <string name="products_fee_owner_label">Pessoa responsável pela tarifa</string>
+    <string name="products_active_checkbox_label">Produto ativo para novas vendas</string>
+    <string name="products_save_create">Salvar produto</string>
+    <string name="products_save_edit">Salvar alterações</string>
+    <string name="products_cancel_create">Cancelar</string>
+    <string name="products_cancel_edit">Cancelar edição</string>
+    <string name="products_registered_title">Produtos cadastrados</string>
+
+    <!-- Etapa V2-4A — Tela Maquininhas -->
+    <string name="machines_header_title">Maquininhas</string>
+    <string name="machines_list_card_title">Maquininhas cadastradas</string>
+    <string name="machines_list_card_subtitle">Consulte e gerencie as maquininhas existentes. O formulário de cadastro só aparece ao selecionar uma das ações abaixo.</string>
+    <string name="machines_new_button">Cadastrar nova maquininha</string>
+    <string name="machines_create_title">Cadastrar maquininha</string>
+    <string name="machines_edit_title">Editar maquininha</string>
+    <string name="machines_create_subtitle">Configure as taxas e salve para usar nas próximas vendas.</string>
+    <string name="machines_edit_subtitle">Altere as taxas e salve para atualizar as próximas vendas.</string>
+    <string name="machines_back_to_list">Voltar às maquininhas cadastradas</string>
+    <string name="machines_name_label">Nome da maquininha</string>
+    <string name="machines_name_placeholder">Ex.: Ton Pro, InfinitePay, Mercado Pago</string>
+    <string name="machines_debit_rate_label">Taxa de débito (%)</string>
+    <string name="machines_credit_default_rate_label">Taxa de crédito (%)</string>
+    <string name="machines_enable_credit">Habilitar pagamento por crédito</string>
+    <string name="machines_enable_brands">Habilitar taxas por bandeira</string>
+    <string name="machines_enable_installments">Habilitar parcelamento no crédito</string>
+    <string name="machines_custom_brands_helper">Cadastre bandeiras específicas desta maquininha informando nome e tarifa no crédito e no débito.</string>
+    <string name="machines_flags_footer">O cadastro da maquininha controla a exibição de Bandeira e Parcelamento na venda.</string>
+    <string name="machines_brands_section_title">Taxas por bandeira</string>
+    <string name="machines_brands_section_desc">Configure as taxas específicas aceitas pela maquininha. Deixe vazio para usar a taxa de crédito padrão.</string>
+    <string name="machines_installments_section_title">Taxas de parcelamento</string>
+    <string name="machines_installments_section_desc">Taxa adicional por quantidade de parcelas, somada à taxa base ou à taxa da bandeira.</string>
+    <string name="machines_max_installments_label">Máximo de parcelas permitido na venda</string>
+    <string name="machines_max_installments_legacy_option">Padrão anterior (1, 2, 3, 4, 6 e 12x)</string>
+    <string name="machines_max_installments_helper">Alterar este limite controla quais parcelas aparecem na venda sem apagar taxas salvas de parcelas maiores.</string>
+    <string name="machines_save_create">Salvar maquininha</string>
+    <string name="machines_save_edit">Salvar alterações</string>
+    <string name="machines_cancel_action">Cancelar</string>
+    <string name="machines_discard_title">Descartar alterações?</string>
+    <string name="machines_discard_message">Você alterou informações desta maquininha. Deseja descartar as alterações e voltar para a lista?</string>
+    <string name="machines_discard_confirm">Descartar</string>
+    <string name="machines_discard_continue">Continuar editando</string>
+
+    <!-- Tela Atualizar sistema (reconciliação interna controlada do histórico) -->
+    <string name="update_system_badge">ATUALIZAÇÃO INTERNA DO SISTEMA</string>
+    <string name="update_system_title">Atualizar valores e cadastros no histórico</string>
+    <string name="update_system_intro">Analise o impacto de alterações feitas em Nomes, Produtos e Maquininhas antes de gravar no histórico. Valores cobrados, datas, quantidades e tarifas manuais permanecem protegidos.</string>
+    <string name="update_system_analyze_action">Analisar ajustes</string>
+    <string name="update_system_backup_action">Fazer backup JSON</string>
+    <string name="update_system_apply_action">Atualizar os valores do histórico</string>
+    <string name="update_system_undo_action">Desfazer última atualização</string>
+    <string name="update_system_metric_to_update">Vendas a atualizar</string>
+    <string name="update_system_metric_already_correct">Já corretas</string>
+    <string name="update_system_metric_requires_review">Exigem revisão</string>
+    <string name="update_system_preview_banner">Prévia: nada mudou no histórico ainda.</string>
+    <string name="update_system_conflicts_banner">Corrija estes conflitos antes de atualizar.</string>
+    <string name="update_system_undo_banner">Existe uma atualização anterior que pode ser desfeita.</string>
+
+    <!-- Etapa 4A — Vendas por Dia e Filtro por Dia -->
+    <string name="daily_sales_description">Todos os dias que tiveram vendas, separados por mês. Toque em um dia para abrir suas vendas.</string>
+    <string name="daily_sales_total_label">Total vendido em todos os meses</string>
+    <string name="daily_sales_month_total_prefix">TOTAL DO MÊS:</string>
+    <string name="daily_sales_empty_message">Não há dias com vendas para apresentar.</string>
+    <string name="sales_day_filter_prefix">Dia selecionado: %1$s</string>
+    <string name="sales_day_filter_subtitle">Exibindo somente as vendas desta data no histórico local.</string>
+    <string name="sales_day_filter_clear">Limpar filtro do dia</string>
+
+    <!-- Etapa 6D-1 / V2-8A — Interface de Exportação do Backup JSON -->
+    <string name="backup_restore_title">Backup e restauração</string>
+    <string name="backup_restore_subtitle">Salve e recupere seus cadastros, vendas, maquininhas e histórico financeiro com segurança.</string>
+    <string name="backup_export_section_title">Exportar backup</string>
+    <string name="backup_export_json_button">Exportar backup JSON</string>
+    <string name="backup_export_json_description">Gere um arquivo JSON com os dados atuais do aplicativo.</string>
+    <string name="backup_export_preparing">Preparando backup...</string>
+    <string name="backup_export_saving">Salvando backup...</string>
+    <string name="backup_export_success">Backup JSON salvo com sucesso.</string>
+    <string name="backup_export_cancelled">Exportação cancelada.</string>
+    <string name="backup_export_error">Não foi possível salvar o backup.</string>
+    <string name="backup_export_offline_note">O backup é gerado localmente em formato JSON (UTF-8) e salvo apenas na pasta que você escolher.</string>
+
+    <!-- Etapa 6D-2 / V2-8A — Seleção e Análise Visual de Backup JSON -->
+    <string name="backup_import_section_title">Importar / Restaurar backup</string>
+    <string name="backup_select_json_button">Selecionar backup JSON</string>
+    <string name="backup_select_json_description">Selecione um arquivo JSON para analisar os dados antes de restaurar.</string>
+    <string name="backup_step_1_title">1 — Analisar</string>
+    <string name="backup_step_1_desc">Ler e validar o arquivo.</string>
+    <string name="backup_step_2_title">2 — Revisar conflitos</string>
+    <string name="backup_step_2_desc">Comparar com os dados atuais e escolher como resolver diferenças.</string>
+    <string name="backup_step_3_title">3 — Restaurar</string>
+    <string name="backup_step_3_desc">Conferir a prévia e confirmar explicitamente a execução.</string>
+    <string name="backup_security_offline_note">O backup é gerado e analisado localmente. A restauração exige revisão e confirmação antes de alterar os dados.</string>
+    <string name="backup_analysis_reading">Lendo arquivo selecionado...</string>
+    <string name="backup_analysis_validating">Validando backup JSON...</string>
+    <string name="backup_analysis_comparing">Comparando com o banco local...</string>
+    <string name="backup_analysis_cancelled">Seleção de backup cancelada.</string>
+    <string name="backup_analysis_error_invalid">Arquivo de backup inválido.</string>
+    <string name="backup_analysis_error_version">Versão de backup incompatível.</string>
+    <string name="backup_analysis_error_too_large">Arquivo muito grande.</string>
+    <string name="backup_analysis_error_read">Não foi possível ler o arquivo selecionado.</string>
+    <string name="backup_analysis_error_inconsistent">Backup contém registros inconsistentes.</string>
+    <string name="backup_selected_card_title">Backup selecionado</string>
+    <string name="backup_comparison_card_title">Resultado da comparação</string>
+    <string name="backup_comparison_has_conflicts">Existem diferenças que precisarão ser resolvidas antes da restauração.</string>
+    <string name="backup_comparison_no_conflicts">Análise concluída. Nenhum conflito encontrado.</string>
+    <string name="backup_analysis_readonly_note">Somente análise visual. Nenhuma alteração foi gravada no banco local; a restauração exigirá nova validação antes de aplicar alterações.</string>
+
+    <!-- Etapa 6D-3A — Interface de Resolução de Conflitos JSON -->
+    <string name="backup_conflicts_section_title">Resolver conflitos</string>
+    <string name="backup_conflicts_section_description">Escolha quais informações deseja manter antes de restaurar o backup.</string>
+    <string name="backup_conflicts_none_to_resolve">Nenhum conflito encontrado para resolver. Você pode avançar para a revisão da restauração.</string>
+    <string name="backup_conflicts_option_keep_local">MANTER DO CELULAR</string>
+    <string name="backup_conflicts_option_use_backup">USAR DO BACKUP</string>
+    <string name="backup_conflicts_option_ignore_import">IGNORAR IMPORTAÇÃO</string>
+    <string name="backup_conflicts_financial_warning">Atenção: este conflito envolve diferenças financeiras ou de taxas.</string>
+    <string name="backup_conflicts_atomic_unit_note">Conjunto único: a escolha se aplica igualmente a todo o registro e seus itens/taxas vinculados.</string>
+    <string name="backup_conflicts_review_button">Revisar restauração</string>
+    <string name="backup_conflicts_review_ready_title">Pronto para revisão da restauração</string>
+    <string name="backup_conflicts_review_ready_description">Todas as decisões foram validadas e o plano está pronto para a prévia financeira na próxima etapa. Nenhuma alteração foi gravada no banco local.</string>
+    <string name="backup_analysis_error_local_changed">O banco de dados local foi alterado após a comparação. Selecione o backup JSON novamente para atualizar a análise.</string>
+
+    <!-- Etapa 6D-3B — Prévia Final da Restauração JSON -->
+    <string name="backup_preview_section_title">REVISAR RESTAURAÇÃO</string>
+    <string name="backup_preview_section_subtitle">Confira exatamente o que será adicionado, mantido ou substituído e os efeitos financeiros previstos.</string>
+    <string name="backup_preview_preparing">Preparando prévia da restauração...</string>
+    <string name="backup_preview_invalid_title">Não foi possível validar a prévia com segurança.</string>
+    <string name="backup_preview_changes_title">Detalhamento das alterações</string>
+    <string name="backup_preview_no_changes">Nenhuma inclusão ou substituição será aplicada; os registros atuais do celular permanecerão intactos.</string>
+    <string name="backup_preview_op_add">INCLUIR (ADD)</string>
+    <string name="backup_preview_op_replace">SUBSTITUIR (REPLACE)</string>
+    <string name="backup_preview_financial_title">Resumo financeiro previsto</string>
+    <string name="backup_preview_sales_protection_title">Proteção das vendas e histórico</string>
+    <string name="backup_preview_protection_local_only">Vendas somente locais serão preservadas.</string>
+    <string name="backup_preview_protection_no_dup">Vendas idênticas não serão duplicadas.</string>
+    <string name="backup_preview_protection_add_new">Novas vendas válidas poderão ser adicionadas.</string>
+    <string name="backup_preview_protection_explicit_replace">Vendas conflitantes somente poderão ser substituídas conforme decisão explícita.</string>
+    <string name="backup_preview_protection_snapshots">Snapshots históricos serão preservados, sem recalcular taxas, descontos ou preços.</string>
+    <string name="backup_preview_protection_no_mixing">Nenhum registro local será misturado com itens ou filhos importados.</string>
+    <string name="backup_preview_back_to_conflicts">Voltar aos conflitos</string>
+    <string name="backup_preview_review_before_confirm">Revise as alterações antes de confirmar a restauração.</string>
+    <string name="backup_preview_not_executed">Restauração ainda não executada.</string>
+
+    <!-- Etapa 6D-4 — Confirmação e Execução Final da Restauração JSON -->
+    <string name="backup_restore_button">Restaurar backup</string>
+    <string name="backup_restore_dialog_title">Confirmar restauração</string>
+    <string name="backup_restore_dialog_message">Os dados do backup serão mesclados com os dados do celular conforme as escolhas realizadas.\n\nRegistros somente locais serão preservados.\n\nOs conjuntos escolhidos para substituição serão atualizados integralmente.\n\nDeseja confirmar a restauração?</string>
+    <string name="backup_restore_dialog_cancel">Cancelar</string>
+    <string name="backup_restore_dialog_confirm">Confirmar restauração</string>
+    <string name="backup_restore_executing">Restaurando backup...</string>
+    <string name="backup_restore_success_title">Backup restaurado com sucesso!</string>
+    <string name="backup_restore_failed_title">Não foi possível concluir a restauração.</string>
+    <string name="backup_restore_error_local_changed">Os dados do celular foram alterados. Analise o backup novamente.</string>
+    <string name="backup_restore_error_constraint">Foi encontrada uma incompatibilidade entre os registros.</string>
+    <string name="backup_restore_error_unresolved">Existem conflitos que precisam ser resolvidos.</string>
+    <string name="backup_restore_error_generic_rollback">A restauração não pôde ser concluída. Seus dados existentes foram preservados quando a transação foi revertida.</string>
+    <string name="backup_restore_error_generic_no_rollback">A restauração não pôde ser concluída antes da gravação. Nenhuma alteração foi aplicada ao banco local.</string>
+    <string name="backup_restore_rolled_back_note">Transação revertida integralmente: seus dados existentes foram preservados.</string>
+    <string name="backup_restore_no_rollback_note">Nenhuma alteração foi gravada no banco de dados local.</string>
+</resources>
