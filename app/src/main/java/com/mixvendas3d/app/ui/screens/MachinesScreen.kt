@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -129,6 +130,7 @@ fun MachinesScreen(
     onToggleInstallmentsSectionExpanded: () -> Unit,
     onSaveMachine: () -> Unit,
     modifier: Modifier = Modifier,
+    onEditorBrandDebitRateChanged: (CardBrand, String) -> Unit = { _, _ -> },
     onNewCustomBrandNameChanged: (String) -> Unit = {},
     onNewCustomBrandRateChanged: (String) -> Unit = {},
     onNewCustomBrandCreditRateChanged: (String) -> Unit = {},
@@ -330,6 +332,7 @@ fun MachinesScreen(
                 onCreditDefaultRateChanged = onEditorCreditDefaultRateChanged,
                 onBrandRatesEnabledChanged = onEditorBrandRatesEnabledChanged,
                 onBrandRateChanged = onEditorBrandRateChanged,
+                onBrandDebitRateChanged = onEditorBrandDebitRateChanged,
                 onInstallmentsEnabledChanged = onEditorInstallmentsEnabledChanged,
                 onInstallmentAddonChanged = onEditorInstallmentAddonChanged,
                 onMaxInstallmentsChanged = onEditorMaxInstallmentsChanged,
@@ -557,15 +560,28 @@ private fun MachineV2Card(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        val configuredStandardCount = (machine.brandRatesBps.keys + machine.brandDebitRatesBps.keys).size
+        val customBrandCount = machine.customBrandRates.size
         val summaryText = if (!machine.creditEnabled) {
-            "Crédito desativado no momento · taxas salvas preservadas"
-        } else {
-            val totalBrandCount = machine.brandRatesBps.size + machine.customBrandRates.size
-            val brandSummary = if (machine.brandRatesEnabled) {
-                if (machine.customBrandRates.isNotEmpty()) {
-                    "$totalBrandCount taxa(s) específica(s) de bandeira (${machine.customBrandRates.size} personalizada(s))"
+            if (machine.brandRatesEnabled) {
+                val debitSpecificCount = machine.brandDebitRatesBps.size +
+                    machine.customBrandRates.count { it.debitRateBps != null }
+                val customNote = if (customBrandCount > 0) " ($customBrandCount personalizada(s))" else ""
+                if (debitSpecificCount > 0 || customBrandCount > 0) {
+                    "Crédito desativado · $debitSpecificCount taxa(s) específica(s) no débito$customNote"
                 } else {
-                    "${machine.brandRatesBps.size} taxa(s) específica(s) de bandeira"
+                    "Crédito desativado · bandeiras no débito usam taxa padrão"
+                }
+            } else {
+                "Crédito desativado no momento · taxas salvas preservadas"
+            }
+        } else {
+            val totalBrandCount = configuredStandardCount + customBrandCount
+            val brandSummary = if (machine.brandRatesEnabled) {
+                if (customBrandCount > 0) {
+                    "$totalBrandCount bandeira(s) com taxa específica ($customBrandCount personalizada(s))"
+                } else {
+                    "$configuredStandardCount bandeira(s) com taxa específica"
                 }
             } else {
                 "Bandeiras usam taxa padrão"
@@ -595,9 +611,50 @@ private fun MachineV2Card(
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.28f))
             Spacer(modifier = Modifier.height(10.dp))
+
+            if (machine.brandRatesEnabled) {
+                val debitStandardText = CardBrand.entries.joinToString(" · ") { brand ->
+                    val rate = machine.brandDebitRatesBps[brand]
+                    if (rate != null) {
+                        "${brand.label} ${RateFormatter.formatBpsAsPercent(rate)}"
+                    } else {
+                        "${brand.label} (padrão)"
+                    }
+                }
+                val debitBrandsDetails = if (machine.customBrandRates.isEmpty()) {
+                    debitStandardText
+                } else {
+                    val debitCustomText = machine.customBrandRates.joinToString(" · ") { custom ->
+                        val rate = custom.debitRateBps
+                        if (rate != null) {
+                            "${custom.name} (personalizada) ${RateFormatter.formatBpsAsPercent(rate)}"
+                        } else {
+                            "${custom.name} (personalizada) (padrão)"
+                        }
+                    }
+                    "$debitStandardText · $debitCustomText"
+                }
+                Text(
+                    text = "Bandeiras (Débito): $debitBrandsDetails",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    color = HomeCardLabelInk,
+                    modifier = Modifier.testTag("machine_card_debit_brands_${machine.id}"),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            } else {
+                Text(
+                    text = "Taxas por bandeira desativadas (usa taxa padrão).",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    color = HomeCardLabelInk,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
             if (machine.creditEnabled) {
-                val brandsDetails = if (machine.brandRatesEnabled) {
-                    val standardText = CardBrand.entries.joinToString(" · ") { brand ->
+                if (machine.brandRatesEnabled) {
+                    val creditStandardText = CardBrand.entries.joinToString(" · ") { brand ->
                         val rate = machine.brandRatesBps[brand]
                         if (rate != null) {
                             "${brand.label} ${RateFormatter.formatBpsAsPercent(rate)}"
@@ -605,24 +662,28 @@ private fun MachineV2Card(
                             "${brand.label} (padrão)"
                         }
                     }
-                    if (machine.customBrandRates.isEmpty()) {
-                        standardText
+                    val creditBrandsDetails = if (machine.customBrandRates.isEmpty()) {
+                        creditStandardText
                     } else {
-                        val customText = machine.customBrandRates.joinToString(" · ") { custom ->
-                            "${custom.name} (personalizada) ${RateFormatter.formatBpsAsPercent(custom.rateBps)}"
+                        val creditCustomText = machine.customBrandRates.joinToString(" · ") { custom ->
+                            val rate = custom.creditRateBps
+                            if (rate != null) {
+                                "${custom.name} (personalizada) ${RateFormatter.formatBpsAsPercent(rate)}"
+                            } else {
+                                "${custom.name} (personalizada) (padrão)"
+                            }
                         }
-                        "$standardText · $customText"
+                        "$creditStandardText · $creditCustomText"
                     }
-                } else {
-                    "Taxas por bandeira desativadas (usa taxa padrão)."
+                    Text(
+                        text = "Bandeiras (Crédito): $creditBrandsDetails",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 12.sp,
+                        color = HomeCardLabelInk,
+                        modifier = Modifier.testTag("machine_card_credit_brands_${machine.id}"),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
-                Text(
-                    text = "Bandeiras: $brandsDetails",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontSize = 12.sp,
-                    color = HomeCardLabelInk,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
                 val installmentDetails = if (machine.installmentsEnabled) {
                     machine.allowedInstallmentTiers().joinToString(" · ") { tier ->
                         val addon = machine.installmentAddonsBps[tier] ?: 0
@@ -778,6 +839,7 @@ private fun MachineEditorContent(
     onCreditDefaultRateChanged: (String) -> Unit,
     onBrandRatesEnabledChanged: (Boolean) -> Unit,
     onBrandRateChanged: (CardBrand, String) -> Unit,
+    onBrandDebitRateChanged: (CardBrand, String) -> Unit,
     onInstallmentsEnabledChanged: (Boolean) -> Unit,
     onInstallmentAddonChanged: (Int, String) -> Unit,
     onMaxInstallmentsChanged: (Int?) -> Unit,
@@ -1051,19 +1113,115 @@ private fun MachineEditorContent(
                         sectionTestTag = "editor_brand_rates_section",
                         toggleTestTag = "toggle_brand_section_collapse",
                     ) {
-                        CustomBrandsEditorBlock(
+                        Text(
+                            text = "Bandeiras padrão (${CardBrand.entries.size})",
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White,
+                            modifier = Modifier.testTag("editor_standard_brands_header"),
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (editor.creditEnabled) {
+                                "Preencha apenas as bandeiras com taxa diferente da padrão no débito e/ou no crédito."
+                            } else {
+                                "Crédito desativado: configure taxas específicas no débito (taxas de crédito salvas permanecem preservadas)."
+                            },
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = V19InkMuted,
+                        )
+                    }
+                }
+
+                if (editor.isBrandSectionExpanded) {
+                    items(
+                        items = CardBrand.entries,
+                        key = { "standard_brand_${it.storageKey}" },
+                    ) { brand ->
+                        StandardBrandRateRowCard(
+                            brand = brand,
                             creditEnabled = editor.creditEnabled,
-                            customBrands = editor.customBrandDrafts,
+                            debitRateInput = editor.brandDebitRateInputs[brand].orEmpty(),
+                            creditRateInput = editor.brandRateInputs[brand].orEmpty(),
+                            onDebitRateChanged = { onBrandDebitRateChanged(brand, it) },
+                            onCreditRateChanged = { onBrandRateChanged(brand, it) },
+                        )
+                    }
+
+                    item(key = "editor_custom_brands_header") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .testTag("editor_custom_brands_block"),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = "Bandeiras personalizadas",
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White,
+                            )
+                            Text(
+                                text = stringResource(R.string.machines_custom_brands_helper),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                color = V19InkMuted,
+                            )
+                        }
+                    }
+
+                    item(key = "editor_custom_brands_add") {
+                        CustomBrandAddCard(
+                            creditEnabled = editor.creditEnabled,
                             newNameInput = editor.newCustomBrandNameInput,
                             newCreditRateInput = editor.newCustomBrandCreditRateInput,
                             newDebitRateInput = editor.newCustomBrandDebitRateInput,
-                            errorMessage = editor.customBrandErrorMessage,
                             onNewNameChanged = onNewCustomBrandNameChanged,
                             onNewCreditRateChanged = onNewCustomBrandCreditRateChanged,
                             onNewDebitRateChanged = onNewCustomBrandDebitRateChanged,
                             onAddCustomBrand = onAddCustomBrand,
-                            onCustomCreditRateChanged = onCustomBrandCreditRateChanged,
+                        )
+                    }
+
+                    if (!editor.customBrandErrorMessage.isNullOrBlank()) {
+                        item(key = "editor_custom_brands_error") {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("custom_brand_error_banner"),
+                                shape = RoundedCornerShape(14.dp),
+                                color = V19ErrorContainer,
+                                border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
+                            ) {
+                                Text(
+                                    text = editor.customBrandErrorMessage,
+                                    fontFamily = PlusJakartaSansFontFamily,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = V19ErrorSoft,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    items(
+                        items = editor.customBrandDrafts,
+                        key = { "custom_brand_${it.localId}" },
+                    ) { customItem ->
+                        CustomBrandItemCard(
+                            item = customItem,
+                            creditEnabled = editor.creditEnabled,
                             onCustomDebitRateChanged = onCustomBrandDebitRateChanged,
+                            onCustomCreditRateChanged = onCustomBrandCreditRateChanged,
                             onRemoveCustomBrand = onRemoveCustomBrand,
                         )
                     }
@@ -1287,407 +1445,308 @@ private fun MaxInstallmentChoicePill(
 }
 
 @Composable
-private fun CustomBrandsEditorBlock(
-    creditEnabled: Boolean = true,
-    customBrands: List<CustomBrandDraftItem>,
-    newNameInput: String,
-    newRateInput: String = "",
-    newCreditRateInput: String = newRateInput,
-    newDebitRateInput: String = "",
-    errorMessage: String?,
-    onNewNameChanged: (String) -> Unit,
-    onNewRateChanged: (String) -> Unit = {},
-    onNewCreditRateChanged: (String) -> Unit = onNewRateChanged,
-    onNewDebitRateChanged: (String) -> Unit = {},
-    onAddCustomBrand: () -> Unit,
-    onCustomRateChanged: (String, String) -> Unit = { _, _ -> },
-    onCustomCreditRateChanged: (String, String) -> Unit = onCustomRateChanged,
-    onCustomDebitRateChanged: (String, String) -> Unit = { _, _ -> },
-    onRemoveCustomBrand: (String) -> Unit,
+private fun StandardBrandRateRowCard(
+    brand: CardBrand,
+    creditEnabled: Boolean,
+    debitRateInput: String,
+    creditRateInput: String,
+    onDebitRateChanged: (String) -> Unit,
+    onCreditRateChanged: (String) -> Unit,
 ) {
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("editor_custom_brands_block"),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .testTag("standard_brand_row_${brand.storageKey}"),
+        shape = RoundedCornerShape(18.dp),
+        color = GlassInnerBoxBg,
+        border = BorderStroke(1.dp, GlassNeonBorder15),
     ) {
-        Text(
-            text = "Bandeiras personalizadas",
-            fontFamily = PlusJakartaSansFontFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            color = Color.White,
-        )
-        Text(
-            text = stringResource(R.string.machines_custom_brands_helper),
-            fontFamily = PlusJakartaSansFontFamily,
-            fontWeight = FontWeight.Normal,
-            fontSize = 12.sp,
-            lineHeight = 17.sp,
-            color = V19InkMuted,
-        )
-
-        // Adicionar nova bandeira personalizada
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = GlassInnerBoxBg,
-            border = BorderStroke(1.dp, GlassNeonBorder15),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = "Adicionar bandeira personalizada",
+                    text = brand.label,
                     fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = HomeCardLabelInk,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-                OutlinedTextField(
-                    value = newNameInput,
-                    onValueChange = onNewNameChanged,
-                    singleLine = true,
-                    textStyle = TextStyle(
+                if (debitRateInput.isBlank() && (!creditEnabled || creditRateInput.isBlank())) {
+                    Text(
+                        text = "Usa padrão",
                         fontFamily = PlusJakartaSansFontFamily,
                         fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp,
-                        color = Color.White,
-                    ),
-                    placeholder = {
-                        Text(
-                            text = "Ex.: Crédz, Alelo, Banese Card",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontSize = 14.sp,
-                            color = V19InkMuted,
-                        )
-                    },
-                    colors = namesDarkInputColors(),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("custom_brand_name_input"),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Débito (%)",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontSize = 11.sp,
-                            color = V19PurpleSoftText,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = newDebitRateInput,
-                            onValueChange = onNewDebitRateChanged,
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                                color = Color.White,
-                                textAlign = TextAlign.End,
-                            ),
-                            placeholder = {
-                                Text(
-                                    text = "0,00",
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontSize = 13.sp,
-                                    color = V19InkMuted,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            },
-                            suffix = {
-                                Text(
-                                    text = "%",
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    color = V19PurpleSoftText,
-                                )
-                            },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = namesDarkInputColors(),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("new_custom_brand_debit_rate_input"),
-                        )
-                    }
-
-                    if (creditEnabled) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Crédito (%)",
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontSize = 11.sp,
-                                color = V19PurpleSoftText,
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = newCreditRateInput,
-                                onValueChange = onNewCreditRateChanged,
-                                singleLine = true,
-                                textStyle = TextStyle(
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    color = Color.White,
-                                    textAlign = TextAlign.End,
-                                ),
-                                placeholder = {
-                                    Text(
-                                        text = "0,00",
-                                        fontFamily = PlusJakartaSansFontFamily,
-                                        fontSize = 13.sp,
-                                        color = V19InkMuted,
-                                        textAlign = TextAlign.End,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                },
-                                suffix = {
-                                    Text(
-                                        text = "%",
-                                        fontFamily = PlusJakartaSansFontFamily,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
-                                        color = V19PurpleSoftText,
-                                    )
-                                },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                colors = namesDarkInputColors(),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("new_custom_brand_credit_rate_input"),
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = onAddCustomBrand,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = V19PurplePrimary,
-                            contentColor = Color.White,
-                        ),
-                        modifier = Modifier
-                            .padding(top = 18.dp)
-                            .heightIn(min = 48.dp)
-                            .testTag("add_custom_brand_button"),
-                    ) {
-                        Text(
-                            text = "+ Adicionar",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                        )
-                    }
+                        fontSize = 11.sp,
+                        color = V19InkMuted,
+                    )
                 }
             }
-        }
 
-        // Tabela compacta: Bandeira | Débito | Crédito
-        if (customBrands.isNotEmpty()) {
-            Surface(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = GlassInnerBoxBg,
-                border = BorderStroke(1.dp, GlassNeonBorder15),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    // Header da tabela
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = "Bandeira",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = V19PurpleSoftText,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = "Débito",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = V19PurpleSoftText,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.width(88.dp),
-                        )
-                        if (creditEnabled) {
-                            Text(
-                                text = "Crédito",
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = V19PurpleSoftText,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.width(88.dp),
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(36.dp))
-                    }
-
-                    HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.3f))
-
-                    customBrands.forEachIndexed { index, item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                                .testTag("custom_brand_row_${item.localId}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = item.name,
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-
-                            // Campo compacto Débito
-                            OutlinedTextField(
-                                value = item.debitRateInput,
-                                onValueChange = { onCustomDebitRateChanged(item.localId, it) },
-                                singleLine = true,
-                                textStyle = TextStyle(
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp,
-                                    color = Color.White,
-                                    textAlign = TextAlign.End,
-                                ),
-                                placeholder = {
-                                    Text(
-                                        text = "0,00",
-                                        fontFamily = PlusJakartaSansFontFamily,
-                                        fontSize = 12.sp,
-                                        color = V19InkMuted,
-                                        textAlign = TextAlign.End,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                },
-                                suffix = {
-                                    Text(
-                                        text = "%",
-                                        fontFamily = PlusJakartaSansFontFamily,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.sp,
-                                        color = V19PurpleSoftText,
-                                    )
-                                },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                colors = namesDarkInputColors(),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .width(88.dp)
-                                    .testTag("custom_brand_debit_rate_${item.localId}"),
-                            )
-
-                            // Campo compacto Crédito (se creditEnabled)
-                            if (creditEnabled) {
-                                OutlinedTextField(
-                                    value = item.creditRateInput,
-                                    onValueChange = { onCustomCreditRateChanged(item.localId, it) },
-                                    singleLine = true,
-                                    textStyle = TextStyle(
-                                        fontFamily = PlusJakartaSansFontFamily,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp,
-                                        color = Color.White,
-                                        textAlign = TextAlign.End,
-                                    ),
-                                    placeholder = {
-                                        Text(
-                                            text = "0,00",
-                                            fontFamily = PlusJakartaSansFontFamily,
-                                            fontSize = 12.sp,
-                                            color = V19InkMuted,
-                                            textAlign = TextAlign.End,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    },
-                                    suffix = {
-                                        Text(
-                                            text = "%",
-                                            fontFamily = PlusJakartaSansFontFamily,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 11.sp,
-                                            color = V19PurpleSoftText,
-                                        )
-                                    },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    colors = namesDarkInputColors(),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .width(88.dp)
-                                        .testTag("custom_brand_credit_rate_${item.localId}"),
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { onRemoveCustomBrand(item.localId) },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("remove_custom_brand_${item.localId}"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = "Remover bandeira ${item.name}",
-                                    tint = V19ErrorSoft,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                        if (index < customBrands.lastIndex) {
-                            HorizontalDivider(
-                                color = HomeCardSubtleDivider.copy(alpha = 0.2f),
-                                thickness = 1.dp,
-                            )
-                        }
-                    }
+                BrandCompactRateField(
+                    label = "Débito (%)",
+                    value = debitRateInput,
+                    placeholder = "Padrão",
+                    onValueChange = onDebitRateChanged,
+                    testTag = "standard_brand_debit_rate_${brand.storageKey}",
+                    modifier = Modifier.weight(1f),
+                )
+                if (creditEnabled) {
+                    BrandCompactRateField(
+                        label = "Crédito (%)",
+                        value = creditRateInput,
+                        placeholder = "Padrão",
+                        onValueChange = onCreditRateChanged,
+                        testTag = "standard_brand_credit_rate_${brand.storageKey}",
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
+    }
+}
 
-        if (!errorMessage.isNullOrBlank()) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("custom_brand_error_banner"),
-                shape = RoundedCornerShape(14.dp),
-                color = V19ErrorContainer,
-                border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
-            ) {
+@Composable
+private fun BrandCompactRateField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            fontFamily = PlusJakartaSansFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 11.sp,
+            color = V19PurpleSoftText,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = TextStyle(
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = Color.White,
+                textAlign = TextAlign.End,
+            ),
+            placeholder = {
                 Text(
-                    text = errorMessage,
+                    text = placeholder,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    color = V19InkMuted,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            suffix = {
+                Text(
+                    text = "%",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = V19PurpleSoftText,
+                )
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            colors = namesDarkInputColors(),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(testTag),
+        )
+    }
+}
+
+@Composable
+private fun CustomBrandAddCard(
+    creditEnabled: Boolean,
+    newNameInput: String,
+    newCreditRateInput: String,
+    newDebitRateInput: String,
+    onNewNameChanged: (String) -> Unit,
+    onNewCreditRateChanged: (String) -> Unit,
+    onNewDebitRateChanged: (String) -> Unit,
+    onAddCustomBrand: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = GlassInnerBoxBg,
+        border = BorderStroke(1.dp, GlassNeonBorder15),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = newNameInput,
+                onValueChange = onNewNameChanged,
+                singleLine = true,
+                textStyle = TextStyle(
                     fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 12.sp,
-                    color = V19ErrorSoft,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    fontSize = 15.sp,
+                    color = Color.White,
+                ),
+                placeholder = {
+                    Text(
+                        text = "Ex.: Crédz, Alelo, Banese Card",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 14.sp,
+                        color = V19InkMuted,
+                    )
+                },
+                colors = namesDarkInputColors(),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("custom_brand_name_input"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BrandCompactRateField(
+                    label = "Débito (%)",
+                    value = newDebitRateInput,
+                    placeholder = "0,00",
+                    onValueChange = onNewDebitRateChanged,
+                    testTag = "new_custom_brand_debit_rate_input",
+                    modifier = Modifier.weight(1f),
                 )
+                if (creditEnabled) {
+                    BrandCompactRateField(
+                        label = "Crédito (%)",
+                        value = newCreditRateInput,
+                        placeholder = "0,00",
+                        onValueChange = onNewCreditRateChanged,
+                        testTag = "new_custom_brand_credit_rate_input",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Button(
+                onClick = onAddCustomBrand,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = V19PurplePrimary,
+                    contentColor = Color.White,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("add_custom_brand_button"),
+            ) {
+                Text(
+                    text = "+ Adicionar",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomBrandItemCard(
+    item: CustomBrandDraftItem,
+    creditEnabled: Boolean,
+    onCustomDebitRateChanged: (String, String) -> Unit,
+    onCustomCreditRateChanged: (String, String) -> Unit,
+    onRemoveCustomBrand: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("custom_brand_row_${item.localId}"),
+        shape = RoundedCornerShape(14.dp),
+        color = GlassInnerBoxBg,
+        border = BorderStroke(1.dp, GlassNeonBorder15),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = item.name,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = { onRemoveCustomBrand(item.localId) },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("remove_custom_brand_${item.localId}"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Remover bandeira ${item.name}",
+                        tint = V19ErrorSoft,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                BrandCompactRateField(
+                    label = "Débito (%)",
+                    value = item.debitRateInput,
+                    placeholder = "Padrão",
+                    onValueChange = { onCustomDebitRateChanged(item.localId, it) },
+                    testTag = "custom_brand_debit_rate_${item.localId}",
+                    modifier = Modifier.weight(1f),
+                )
+                if (creditEnabled) {
+                    BrandCompactRateField(
+                        label = "Crédito (%)",
+                        value = item.creditRateInput,
+                        placeholder = "Padrão",
+                        onValueChange = { onCustomCreditRateChanged(item.localId, it) },
+                        testTag = "custom_brand_credit_rate_${item.localId}",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }

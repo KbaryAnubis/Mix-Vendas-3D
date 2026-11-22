@@ -56,13 +56,27 @@ data class ProductDeletionPrompt(
     val isDeleting: Boolean = false,
 )
 
+data class CategoryEditorUiState(
+    val isOpen: Boolean = false,
+    val editingCategoryId: String? = null,
+    val isSubcategory: Boolean = false,
+    val parentId: String? = null,
+    val nameInput: String = "",
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null,
+)
+
 data class ProductsSectionUiState(
     val products: List<Product> = emptyList(),
     val categories: List<ProductCategory> = emptyList(),
     val searchQuery: String = "",
     val showOnlyActive: Boolean = false,
+    val selectedCategoryFilterId: String? = null,
     val feedbackMessage: String? = null,
+    val feedbackIsError: Boolean = false,
     val editor: ProductEditorUiState = ProductEditorUiState(),
+    val categoryManagerOpen: Boolean = false,
+    val categoryEditor: CategoryEditorUiState = CategoryEditorUiState(),
     val deletionPrompt: ProductDeletionPrompt? = null,
 )
 
@@ -98,6 +112,10 @@ class CatalogViewModel(
         namesFormFlow,
         productsFormFlow,
     ) { people, products, categories, namesForm, productsForm ->
+        val validSelectedCategoryFilterId = when (val filterId = productsForm.selectedCategoryFilterId) {
+            null, "uncategorized" -> filterId
+            else -> if (categories.any { it.id == filterId }) filterId else null
+        }
         CatalogUiState(
             names = NamesSectionUiState(
                 people = people,
@@ -112,8 +130,12 @@ class CatalogViewModel(
                 categories = categories,
                 searchQuery = productsForm.searchQuery,
                 showOnlyActive = productsForm.showOnlyActive,
+                selectedCategoryFilterId = validSelectedCategoryFilterId,
                 feedbackMessage = productsForm.feedbackMessage,
+                feedbackIsError = productsForm.feedbackIsError,
                 editor = productsForm.editor,
+                categoryManagerOpen = productsForm.categoryManagerOpen,
+                categoryEditor = productsForm.categoryEditor,
                 deletionPrompt = productsForm.deletionPrompt,
             ),
         )
@@ -211,9 +233,16 @@ class CatalogViewModel(
         productsFormFlow.value = productsFormFlow.value.copy(showOnlyActive = onlyActive)
     }
 
+    fun onCategoryFilterSelected(categoryId: String?) {
+        productsFormFlow.value = productsFormFlow.value.copy(selectedCategoryFilterId = categoryId)
+    }
+
     fun openNewProductEditor() {
         productsFormFlow.value = productsFormFlow.value.copy(
             feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = false,
+            categoryEditor = CategoryEditorUiState(),
             editor = ProductEditorUiState(isOpen = true),
         )
     }
@@ -225,6 +254,9 @@ class CatalogViewModel(
         }
         productsFormFlow.value = productsFormFlow.value.copy(
             feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = false,
+            categoryEditor = CategoryEditorUiState(),
             editor = ProductEditorUiState(
                 isOpen = true,
                 editingProductId = product.id,
@@ -245,6 +277,222 @@ class CatalogViewModel(
         productsFormFlow.value = productsFormFlow.value.copy(
             editor = ProductEditorUiState(isOpen = false),
         )
+    }
+
+    fun openCategoryManager() {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = true,
+            categoryEditor = CategoryEditorUiState(),
+        )
+    }
+
+    fun closeCategoryManager() {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            categoryManagerOpen = false,
+            categoryEditor = CategoryEditorUiState(),
+        )
+    }
+
+    fun openNewCategoryEditor() {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = true,
+            categoryEditor = CategoryEditorUiState(
+                isOpen = true,
+                editingCategoryId = null,
+                isSubcategory = false,
+                parentId = null,
+                nameInput = "",
+            ),
+        )
+    }
+
+    fun openNewSubcategoryEditor(parentCatId: String) {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = true,
+            categoryEditor = CategoryEditorUiState(
+                isOpen = true,
+                editingCategoryId = null,
+                isSubcategory = true,
+                parentId = parentCatId,
+                nameInput = "",
+            ),
+        )
+    }
+
+    fun openEditCategoryEditor(category: ProductCategory) {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            feedbackMessage = null,
+            feedbackIsError = false,
+            categoryManagerOpen = true,
+            categoryEditor = CategoryEditorUiState(
+                isOpen = true,
+                editingCategoryId = category.id,
+                isSubcategory = category.parentId != null,
+                parentId = category.parentId,
+                nameInput = category.name,
+            ),
+        )
+    }
+
+    fun closeCategoryEditor() {
+        productsFormFlow.value = productsFormFlow.value.copy(
+            categoryEditor = CategoryEditorUiState(),
+        )
+    }
+
+    fun onCategoryEditorIsSubcategoryChanged(isSubcategory: Boolean) {
+        updateCategoryEditor { editor ->
+            if (editor.isSaving || editor.editingCategoryId != null) {
+                editor
+            } else {
+                editor.copy(
+                    isSubcategory = isSubcategory,
+                    parentId = if (isSubcategory) editor.parentId else null,
+                    errorMessage = null,
+                )
+            }
+        }
+    }
+
+    fun onCategoryEditorParentChanged(parentId: String?) {
+        updateCategoryEditor { editor ->
+            if (editor.isSaving || editor.editingCategoryId != null) {
+                editor
+            } else {
+                editor.copy(parentId = parentId, errorMessage = null)
+            }
+        }
+    }
+
+    fun onCategoryEditorNameChanged(value: String) {
+        updateCategoryEditor { editor ->
+            if (editor.isSaving) editor else editor.copy(nameInput = value, errorMessage = null)
+        }
+    }
+
+    fun saveCategory() {
+        val editor = productsFormFlow.value.categoryEditor
+        if (!editor.isOpen || editor.isSaving) return
+
+        val cleanName = editor.nameInput.trim()
+        if (cleanName.isBlank()) {
+            updateCategoryEditor { it.copy(errorMessage = "Informe o nome da categoria.") }
+            return
+        }
+        val isEditing = editor.editingCategoryId != null
+        if (!isEditing && editor.isSubcategory && editor.parentId == null) {
+            updateCategoryEditor { it.copy(errorMessage = "Selecione uma categoria principal.") }
+            return
+        }
+
+        updateCategoryEditor { it.copy(isSaving = true, errorMessage = null) }
+
+        viewModelScope.launch {
+            try {
+                if (!isEditing) {
+                    val parentId = if (editor.isSubcategory) editor.parentId else null
+                    catalogRepository.createProductCategory(cleanName, parentId)
+                    productsFormFlow.value = productsFormFlow.value.copy(
+                        feedbackMessage = if (parentId == null) "Categoria criada." else "Subcategoria criada.",
+                        feedbackIsError = false,
+                        categoryEditor = CategoryEditorUiState(),
+                    )
+                } else {
+                    catalogRepository.renameProductCategory(editor.editingCategoryId!!, cleanName)
+                    productsFormFlow.value = productsFormFlow.value.copy(
+                        feedbackMessage = "Categoria renomeada.",
+                        feedbackIsError = false,
+                        categoryEditor = CategoryEditorUiState(),
+                    )
+                }
+            } catch (ex: Exception) {
+                updateCategoryEditor {
+                    it.copy(
+                        isSaving = false,
+                        errorMessage = ex.message ?: if (isEditing) {
+                            "Não foi possível renomear a categoria."
+                        } else {
+                            "Não foi possível criar a categoria."
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    fun handleProductsBackRequested(onExitProducts: () -> Unit) {
+        val form = productsFormFlow.value
+        when {
+            form.categoryEditor.isOpen -> {
+                if (!form.categoryEditor.isSaving) {
+                    closeCategoryEditor()
+                }
+            }
+            form.categoryManagerOpen -> closeCategoryManager()
+            form.editor.isOpen -> closeProductEditor()
+            else -> onExitProducts()
+        }
+    }
+
+    fun resetProductsTransientFlows() {
+        val current = productsFormFlow.value
+        if (current.editor.isOpen ||
+            current.categoryManagerOpen ||
+            current.categoryEditor.isOpen ||
+            current.deletionPrompt != null ||
+            current.feedbackMessage != null
+        ) {
+            productsFormFlow.value = current.copy(
+                feedbackMessage = null,
+                feedbackIsError = false,
+                editor = ProductEditorUiState(),
+                categoryManagerOpen = false,
+                categoryEditor = CategoryEditorUiState(),
+                deletionPrompt = null,
+            )
+        }
+    }
+
+    fun restoreProductsFlowStateIfIdle(
+        selectedCategoryFilterId: String?,
+        categoryManagerOpen: Boolean,
+        categoryEditorOpen: Boolean,
+        categoryEditorEditingId: String?,
+        categoryEditorIsSub: Boolean,
+        categoryEditorParentId: String?,
+        categoryEditorName: String,
+    ) {
+        val current = productsFormFlow.value
+        val isIdle = current.selectedCategoryFilterId == null &&
+            !current.categoryManagerOpen &&
+            !current.categoryEditor.isOpen &&
+            !current.editor.isOpen
+        val hasSavedState = selectedCategoryFilterId != null ||
+            categoryManagerOpen ||
+            categoryEditorOpen
+        if (isIdle && hasSavedState) {
+            productsFormFlow.value = current.copy(
+                selectedCategoryFilterId = selectedCategoryFilterId,
+                categoryManagerOpen = categoryManagerOpen || categoryEditorOpen,
+                categoryEditor = if (categoryEditorOpen) {
+                    CategoryEditorUiState(
+                        isOpen = true,
+                        editingCategoryId = categoryEditorEditingId,
+                        isSubcategory = categoryEditorIsSub,
+                        parentId = categoryEditorParentId,
+                        nameInput = categoryEditorName,
+                    )
+                } else {
+                    CategoryEditorUiState()
+                },
+            )
+        }
     }
 
     fun onProductNameChanged(value: String) {
@@ -280,10 +528,12 @@ class CatalogViewModel(
                 catalogRepository.createProductCategory(name, parentId)
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = if (parentId == null) "Categoria criada." else "Subcategoria criada.",
+                    feedbackIsError = false,
                 )
             } catch (ex: Exception) {
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = ex.message ?: "Não foi possível criar a categoria.",
+                    feedbackIsError = true,
                 )
             }
         }
@@ -293,10 +543,14 @@ class CatalogViewModel(
         viewModelScope.launch {
             try {
                 catalogRepository.renameProductCategory(categoryId, name)
-                productsFormFlow.value = productsFormFlow.value.copy(feedbackMessage = "Categoria renomeada.")
+                productsFormFlow.value = productsFormFlow.value.copy(
+                    feedbackMessage = "Categoria renomeada.",
+                    feedbackIsError = false,
+                )
             } catch (ex: Exception) {
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = ex.message ?: "Não foi possível renomear a categoria.",
+                    feedbackIsError = true,
                 )
             }
         }
@@ -306,10 +560,21 @@ class CatalogViewModel(
         viewModelScope.launch {
             try {
                 catalogRepository.deleteProductCategory(categoryId)
-                productsFormFlow.value = productsFormFlow.value.copy(feedbackMessage = "Categoria excluída.")
+                val current = productsFormFlow.value
+                val nextFilterId = if (current.selectedCategoryFilterId == categoryId) {
+                    null
+                } else {
+                    current.selectedCategoryFilterId
+                }
+                productsFormFlow.value = current.copy(
+                    selectedCategoryFilterId = nextFilterId,
+                    feedbackMessage = "Categoria excluída.",
+                    feedbackIsError = false,
+                )
             } catch (ex: Exception) {
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = ex.message ?: "Não foi possível excluir a categoria.",
+                    feedbackIsError = true,
                 )
             }
         }
@@ -419,6 +684,7 @@ class CatalogViewModel(
                     )
                     productsFormFlow.value = productsFormFlow.value.copy(
                         feedbackMessage = "Produto \"${created.name}\" cadastrado no Room.",
+                        feedbackIsError = false,
                         editor = ProductEditorUiState(isOpen = false),
                     )
                 } else {
@@ -435,6 +701,7 @@ class CatalogViewModel(
                     )
                     productsFormFlow.value = productsFormFlow.value.copy(
                         feedbackMessage = "Produto \"${updated.name}\" atualizado.",
+                        feedbackIsError = false,
                         editor = ProductEditorUiState(isOpen = false),
                     )
                 }
@@ -497,12 +764,14 @@ class CatalogViewModel(
                         productsFormFlow.value = productsFormFlow.value.copy(
                             deletionPrompt = null,
                             feedbackMessage = "Produto \"${prompt.product.name}\" excluído.",
+                            feedbackIsError = false,
                         )
                     }
                     ProductDeletionResult.NotFound -> {
                         productsFormFlow.value = productsFormFlow.value.copy(
                             deletionPrompt = null,
                             feedbackMessage = "O produto não foi encontrado para exclusão.",
+                            feedbackIsError = true,
                         )
                     }
                     is ProductDeletionResult.BlockedBySales -> {
@@ -532,6 +801,11 @@ class CatalogViewModel(
         productsFormFlow.value = current.copy(editor = transform(current.editor))
     }
 
+    private fun updateCategoryEditor(transform: (CategoryEditorUiState) -> CategoryEditorUiState) {
+        val current = productsFormFlow.value
+        productsFormFlow.value = current.copy(categoryEditor = transform(current.categoryEditor))
+    }
+
     private data class NamesFormState(
         val editingPersonId: String? = null,
         val nameInput: String = "",
@@ -543,8 +817,12 @@ class CatalogViewModel(
     private data class ProductsFormState(
         val searchQuery: String = "",
         val showOnlyActive: Boolean = false,
+        val selectedCategoryFilterId: String? = null,
         val feedbackMessage: String? = null,
+        val feedbackIsError: Boolean = false,
         val editor: ProductEditorUiState = ProductEditorUiState(),
+        val categoryManagerOpen: Boolean = false,
+        val categoryEditor: CategoryEditorUiState = CategoryEditorUiState(),
         val deletionPrompt: ProductDeletionPrompt? = null,
     )
 

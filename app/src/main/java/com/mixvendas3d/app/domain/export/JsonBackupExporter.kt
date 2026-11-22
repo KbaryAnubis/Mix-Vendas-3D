@@ -666,10 +666,16 @@ object JsonBackupExporter {
                     "Bandeira duplicada (${br.brandKey}) na maquininha ${br.machineId}",
                 )
             }
-            if (br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+            if (br.rateBps != null && br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
                 throw JsonBackupValidationException(
                     br.machineId,
                     "Taxa da bandeira ${br.brandKey} fora do intervalo na maquininha ${br.machineId}",
+                )
+            }
+            if (br.debitRateBps != null && br.debitRateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+                throw JsonBackupValidationException(
+                    br.machineId,
+                    "Taxa de débito da bandeira ${br.brandKey} fora do intervalo na maquininha ${br.machineId}",
                 )
             }
             brandRatesByMachine.getOrPut(br.machineId) { ArrayList() }.add(br)

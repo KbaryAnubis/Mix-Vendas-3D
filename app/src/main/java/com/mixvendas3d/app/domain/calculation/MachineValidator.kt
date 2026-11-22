@@ -35,6 +35,7 @@ data class MachineInputDraft(
     val maxInstallments: Int? = null,
     val clearMaxInstallments: Boolean = false,
     val customBrandRates: List<CustomCardBrandInput>? = null,
+    val brandDebitRatesBps: Map<CardBrand, Int> = emptyMap(),
 )
 
 data class ValidatedMachineInput(
@@ -50,6 +51,7 @@ data class ValidatedMachineInput(
     val maxInstallments: Int? = null,
     val clearMaxInstallments: Boolean = false,
     val customBrandRates: List<CustomCardBrandRate>? = null,
+    val brandDebitRatesBps: Map<CardBrand, Int> = emptyMap(),
 )
 
 object MachineValidator {
@@ -229,7 +231,12 @@ object MachineValidator {
 
         val cleanBrandRates = linkedMapOf<CardBrand, Int>()
         draft.brandRatesBps.forEach { (brand, rate) ->
-            cleanBrandRates[brand] = validateRateRange("A taxa da bandeira ${brand.label}", rate)
+            cleanBrandRates[brand] = validateRateRange("A taxa de crédito da bandeira ${brand.label}", rate)
+        }
+
+        val cleanBrandDebitRates = linkedMapOf<CardBrand, Int>()
+        draft.brandDebitRatesBps.forEach { (brand, rate) ->
+            cleanBrandDebitRates[brand] = validateRateRange("A taxa de débito da bandeira ${brand.label}", rate)
         }
 
         val cleanCustomBrands = draft.customBrandRates?.let { validateCustomBrands(it) }
@@ -272,6 +279,7 @@ object MachineValidator {
             maxInstallments = if (draft.clearMaxInstallments) null else cleanMaxInstallments,
             clearMaxInstallments = draft.clearMaxInstallments,
             customBrandRates = cleanCustomBrands,
+            brandDebitRatesBps = cleanBrandDebitRates,
         )
     }
 }

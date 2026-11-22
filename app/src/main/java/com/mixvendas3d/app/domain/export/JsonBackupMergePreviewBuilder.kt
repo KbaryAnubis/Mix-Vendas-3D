@@ -1007,7 +1007,7 @@ object JsonBackupMergePreviewBuilder {
                 )
             },
             machineBrandRates = backup.machineBrandRates.map {
-                MachineBrandRateEntity(it.machineId, it.brandKey, it.rateBps)
+                MachineBrandRateEntity(it.machineId, it.brandKey, it.rateBps, it.debitRateBps)
             },
             machineInstallmentRates = backup.machineInstallmentRates.map {
                 MachineInstallmentRateEntity(it.machineId, it.installments, it.addonBps)
@@ -1130,7 +1130,7 @@ object JsonBackupMergePreviewBuilder {
                 )
             },
             machineBrandRates = collections.machineBrandRates.map {
-                MachineBrandRateEntity(it.machineId, it.brandKey, it.rateBps)
+                MachineBrandRateEntity(it.machineId, it.brandKey, it.rateBps, it.debitRateBps)
             },
             machineInstallmentRates = collections.machineInstallmentRates.map {
                 MachineInstallmentRateEntity(it.machineId, it.installments, it.addonBps)
@@ -1184,7 +1184,7 @@ object JsonBackupMergePreviewBuilder {
         maxInstallments = maxInstallments,
     )
 
-    private fun MachineBrandRateEntity.toDto() = MachineBrandRateDto(machineId, brandKey, rateBps)
+    private fun MachineBrandRateEntity.toDto() = MachineBrandRateDto(machineId, brandKey, rateBps, debitRateBps)
 
     private fun MachineInstallmentRateEntity.toDto() = MachineInstallmentRateDto(machineId, installments, addonBps)
 

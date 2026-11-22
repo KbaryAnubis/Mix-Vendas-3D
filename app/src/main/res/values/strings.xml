@@ -249,7 +249,7 @@
     <string name="machines_custom_brands_helper">Cadastre bandeiras específicas desta maquininha informando nome e tarifa no crédito e no débito.</string>
     <string name="machines_flags_footer">O cadastro da maquininha controla a exibição de Bandeira e Parcelamento na venda.</string>
     <string name="machines_brands_section_title">Taxas por bandeira</string>
-    <string name="machines_brands_section_desc">Configure as taxas específicas aceitas pela maquininha. Deixe vazio para usar a taxa de crédito padrão.</string>
+    <string name="machines_brands_section_desc">Configure taxas específicas no débito e no crédito. Deixe vazio para usar a taxa padrão da maquininha.</string>
     <string name="machines_installments_section_title">Taxas de parcelamento</string>
     <string name="machines_installments_section_desc">Taxa adicional por quantidade de parcelas, somada à taxa base ou à taxa da bandeira.</string>
     <string name="machines_max_installments_label">Máximo de parcelas permitido na venda</string>

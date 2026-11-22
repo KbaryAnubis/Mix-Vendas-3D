@@ -23,10 +23,14 @@ fun MaisDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val backAction = if (destination == MaisSubDestination.MACHINES && machinesUiState.editor.isOpen) {
-        machinesViewModel::handleEditorBackRequested
-    } else {
-        onBack
+    val backAction: () -> Unit = when {
+        destination == MaisSubDestination.MACHINES && machinesUiState.editor.isOpen -> {
+            machinesViewModel::handleEditorBackRequested
+        }
+        destination == MaisSubDestination.TYPES_PRODUCTS -> {
+            { catalogViewModel.handleProductsBackRequested(onBack) }
+        }
+        else -> onBack
     }
     BackHandler(onBack = backAction)
 
@@ -69,6 +73,18 @@ fun MaisDetailScreen(
                 onFeeOwnerSelected = catalogViewModel::onFeeOwnerSelected,
                 onSaveProduct = catalogViewModel::saveProduct,
                 modifier = modifier,
+                onCategoryFilterSelected = catalogViewModel::onCategoryFilterSelected,
+                onOpenCategoryManager = catalogViewModel::openCategoryManager,
+                onCloseCategoryManager = catalogViewModel::closeCategoryManager,
+                onOpenNewCategoryEditor = catalogViewModel::openNewCategoryEditor,
+                onOpenNewSubcategoryEditor = catalogViewModel::openNewSubcategoryEditor,
+                onOpenEditCategoryEditor = catalogViewModel::openEditCategoryEditor,
+                onCloseCategoryEditor = catalogViewModel::closeCategoryEditor,
+                onCategoryEditorIsSubcategoryChanged = catalogViewModel::onCategoryEditorIsSubcategoryChanged,
+                onCategoryEditorParentChanged = catalogViewModel::onCategoryEditorParentChanged,
+                onCategoryEditorNameChanged = catalogViewModel::onCategoryEditorNameChanged,
+                onSaveCategory = catalogViewModel::saveCategory,
+                onRestoreProductsFlowState = catalogViewModel::restoreProductsFlowStateIfIdle,
             )
         }
 
@@ -90,6 +106,7 @@ fun MaisDetailScreen(
                 onEditorCreditDefaultRateChanged = machinesViewModel::onEditorCreditDefaultRateChanged,
                 onEditorBrandRatesEnabledChanged = machinesViewModel::onEditorBrandRatesEnabledChanged,
                 onEditorBrandRateChanged = machinesViewModel::onEditorBrandRateChanged,
+                onEditorBrandDebitRateChanged = machinesViewModel::onEditorBrandDebitRateChanged,
                 onEditorInstallmentsEnabledChanged = machinesViewModel::onEditorInstallmentsEnabledChanged,
                 onEditorInstallmentAddonChanged = machinesViewModel::onEditorInstallmentAddonChanged,
                 onEditorMaxInstallmentsChanged = machinesViewModel::onEditorMaxInstallmentsChanged,

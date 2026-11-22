@@ -1030,7 +1030,7 @@ class MixVendasShellViewModel(
             !current.selectedQuantities.containsKey(current.discountTargetProductId)
         venderFormFlow.value = current.copy(
             finalAmountInput = value,
-            finalAmountTouched = value.isNotBlank(),
+            finalAmountTouched = true,
             recalculatedNotice = if (targetMissingNow) current.recalculatedNotice else null,
             recalculatedNoticeIsError = if (targetMissingNow) current.recalculatedNoticeIsError else false,
             feedbackMessage = null,
@@ -1300,7 +1300,7 @@ class MixVendasShellViewModel(
                     "Ajuste o valor final antes de salvar."
                 noticeIsError = true
             }
-        } else if (!current.finalAmountTouched || prevParsedFinal == prevSubtotalCents) {
+        } else if (!current.finalAmountTouched || prevParsedFinal == prevSubtotalCents || current.finalAmountInput.isBlank()) {
             nextFinalInput = CurrencyFormatter.formatCentsForInput(newSubtotalCents)
             nextFinalTouched = false
             if (current.isEditing && newSubtotalCents != prevSubtotalCents) {
@@ -1354,11 +1354,8 @@ class MixVendasShellViewModel(
         val originalQuantities = calc.items.associate { it.productId to it.quantity }
         if (form.selectedQuantities.filterValues { it > 0 } != originalQuantities) return false
 
-        val parsedFinal = if (form.finalAmountInput.isBlank()) {
-            calc.originalSubtotal.rawCents
-        } else {
-            CurrencyFormatter.parseBrlToCents(form.finalAmountInput) ?: return false
-        }
+        if (form.finalAmountInput.isBlank()) return false
+        val parsedFinal = CurrencyFormatter.parseBrlToCents(form.finalAmountInput) ?: return false
         if (parsedFinal != calc.finalAmount.rawCents) return false
 
         val hasDiscount = parsedFinal < calc.originalSubtotal.rawCents
@@ -1424,8 +1421,8 @@ class MixVendasShellViewModel(
             originalSubtotalCents = MonetaryRounding.safeAdd(originalSubtotalCents, lineTotal)
         }
 
-        val finalAmountOverride: MoneyCents? = if (form.finalAmountInput.isBlank()) {
-            null
+        val finalAmountOverride: MoneyCents = if (form.finalAmountInput.isBlank()) {
+            throw SaleCalculationException("Informe o valor final da venda.")
         } else {
             val parsedCents = CurrencyFormatter.parseBrlToCents(form.finalAmountInput)
                 ?: throw SaleCalculationException("Valor final da venda inválido. Informe um valor em reais (ex.: 95,00).")
@@ -1440,7 +1437,7 @@ class MixVendasShellViewModel(
             MoneyCents(parsedCents)
         }
 
-        val effectiveFinalCents = finalAmountOverride?.rawCents ?: originalSubtotalCents
+        val effectiveFinalCents = finalAmountOverride.rawCents
         val hasDiscount = effectiveFinalCents < originalSubtotalCents
         val discountMode = if (
             hasDiscount &&

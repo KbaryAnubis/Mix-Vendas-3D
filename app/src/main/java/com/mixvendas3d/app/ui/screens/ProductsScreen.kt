@@ -1,9 +1,6 @@
 package com.mixvendas3d.app.ui.screens
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,18 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -45,16 +36,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -121,80 +111,95 @@ fun ProductsScreen(
     onFeeOwnerSelected: (String) -> Unit,
     onSaveProduct: () -> Unit,
     modifier: Modifier = Modifier,
+    onCategoryFilterSelected: (String?) -> Unit = {},
+    onOpenCategoryManager: () -> Unit = {},
+    onCloseCategoryManager: () -> Unit = {},
+    onOpenNewCategoryEditor: () -> Unit = {},
+    onOpenNewSubcategoryEditor: (String) -> Unit = {},
+    onOpenEditCategoryEditor: (ProductCategory) -> Unit = {},
+    onCloseCategoryEditor: () -> Unit = {},
+    onCategoryEditorIsSubcategoryChanged: (Boolean) -> Unit = {},
+    onCategoryEditorParentChanged: (String?) -> Unit = {},
+    onCategoryEditorNameChanged: (String) -> Unit = {},
+    onSaveCategory: () -> Unit = {},
+    onRestoreProductsFlowState: (
+        selectedCategoryFilterId: String?,
+        categoryManagerOpen: Boolean,
+        categoryEditorOpen: Boolean,
+        categoryEditorEditingId: String?,
+        categoryEditorIsSub: Boolean,
+        categoryEditorParentId: String?,
+        categoryEditorName: String,
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
 ) {
     val productsState = uiState.products
-    val filteredProducts = uiState.filteredProducts
     val people = uiState.names.people
 
-    var showCategoryManager by remember { mutableStateOf(false) }
-    var showCategoryEditor by remember { mutableStateOf(false) }
-    var editingCategoryTarget by remember { mutableStateOf<ProductCategory?>(null) }
-    var categoryEditorIsSub by remember { mutableStateOf(false) }
-    var categoryEditorParentId by remember { mutableStateOf<String?>(null) }
-    var selectedCategoryFilterId by remember { mutableStateOf<String?>(null) }
+    // Sincronização leve com rememberSaveable para preservação de IDs/flags após recriação de Activity
+    var savedFilterId by rememberSaveable { mutableStateOf(productsState.selectedCategoryFilterId) }
+    var savedCategoryManagerOpen by rememberSaveable { mutableStateOf(productsState.categoryManagerOpen) }
+    var savedCategoryEditorOpen by rememberSaveable { mutableStateOf(productsState.categoryEditor.isOpen) }
+    var savedCategoryEditorEditingId by rememberSaveable { mutableStateOf(productsState.categoryEditor.editingCategoryId) }
+    var savedCategoryEditorIsSub by rememberSaveable { mutableStateOf(productsState.categoryEditor.isSubcategory) }
+    var savedCategoryEditorParentId by rememberSaveable { mutableStateOf(productsState.categoryEditor.parentId) }
+    var savedCategoryEditorName by rememberSaveable { mutableStateOf(productsState.categoryEditor.nameInput) }
 
-    // Interceptação de botão Voltar nativo do Android
-    BackHandler(
-        enabled = showCategoryEditor || showCategoryManager || productsState.editor.isOpen,
+    LaunchedEffect(Unit) {
+        onRestoreProductsFlowState(
+            savedFilterId,
+            savedCategoryManagerOpen,
+            savedCategoryEditorOpen,
+            savedCategoryEditorEditingId,
+            savedCategoryEditorIsSub,
+            savedCategoryEditorParentId,
+            savedCategoryEditorName,
+        )
+    }
+
+    LaunchedEffect(
+        productsState.selectedCategoryFilterId,
+        productsState.categoryManagerOpen,
+        productsState.categoryEditor,
     ) {
-        when {
-            showCategoryEditor -> showCategoryEditor = false
-            showCategoryManager -> showCategoryManager = false
-            productsState.editor.isOpen -> onCloseEditor()
-        }
+        savedFilterId = productsState.selectedCategoryFilterId
+        savedCategoryManagerOpen = productsState.categoryManagerOpen
+        savedCategoryEditorOpen = productsState.categoryEditor.isOpen
+        savedCategoryEditorEditingId = productsState.categoryEditor.editingCategoryId
+        savedCategoryEditorIsSub = productsState.categoryEditor.isSubcategory
+        savedCategoryEditorParentId = productsState.categoryEditor.parentId
+        savedCategoryEditorName = productsState.categoryEditor.nameInput
     }
 
     when {
-        // TELA 1: Criar / Editar Categoria (04_criar_editar_categoria.png)
-        showCategoryEditor -> {
+        // TELA 1: Criar / Editar Categoria
+        productsState.categoryEditor.isOpen -> {
             CreateEditCategoryScreen(
-                editingCategory = editingCategoryTarget,
-                initialIsSub = categoryEditorIsSub,
-                initialParentId = categoryEditorParentId,
+                editor = productsState.categoryEditor,
                 categories = productsState.categories,
-                onSave = { name, parentId ->
-                    val target = editingCategoryTarget
-                    if (target != null) {
-                        onRenameCategory(target.id, name)
-                    } else {
-                        onCreateCategory(name, parentId)
-                    }
-                    showCategoryEditor = false
-                },
-                onCancel = { showCategoryEditor = false },
+                onIsSubcategoryChanged = onCategoryEditorIsSubcategoryChanged,
+                onParentChanged = onCategoryEditorParentChanged,
+                onNameChanged = onCategoryEditorNameChanged,
+                onSave = onSaveCategory,
+                onCancel = onCloseCategoryEditor,
                 modifier = modifier,
             )
         }
 
-        // TELA 2: Gerenciamento de Categorias (03_gerenciamento_categorias.png)
-        showCategoryManager -> {
+        // TELA 2: Gerenciamento de Categorias
+        productsState.categoryManagerOpen -> {
             CategoryManagementScreen(
                 categories = productsState.categories,
-                onOpenNewCategory = {
-                    editingCategoryTarget = null
-                    categoryEditorIsSub = false
-                    categoryEditorParentId = null
-                    showCategoryEditor = true
-                },
-                onOpenNewSubcategory = { parentCatId ->
-                    editingCategoryTarget = null
-                    categoryEditorIsSub = true
-                    categoryEditorParentId = parentCatId
-                    showCategoryEditor = true
-                },
-                onEditCategory = { category ->
-                    editingCategoryTarget = category
-                    categoryEditorIsSub = (category.parentId != null)
-                    categoryEditorParentId = category.parentId
-                    showCategoryEditor = true
-                },
+                feedbackMessage = productsState.feedbackMessage,
+                feedbackIsError = productsState.feedbackIsError,
+                onOpenNewCategory = onOpenNewCategoryEditor,
+                onOpenNewSubcategory = onOpenNewSubcategoryEditor,
+                onEditCategory = onOpenEditCategoryEditor,
                 onDeleteCategory = onDeleteCategory,
-                onBack = { showCategoryManager = false },
                 modifier = modifier,
             )
         }
 
-        // TELA 3: Cadastro / Edição de Produto (02_cadastro_produto.png)
+        // TELA 3: Cadastro / Edição de Produto
         productsState.editor.isOpen -> {
             ProductEditorScreen(
                 editor = productsState.editor,
@@ -216,16 +221,16 @@ fun ProductsScreen(
             )
         }
 
-        // TELA 4: Lista Principal de Produtos (01_produtos.png)
+        // TELA 4: Lista Principal de Produtos
         else -> {
             ProductsMainContent(
                 uiState = uiState,
-                selectedCategoryFilterId = selectedCategoryFilterId,
-                onCategoryFilterSelected = { selectedCategoryFilterId = it },
+                selectedCategoryFilterId = productsState.selectedCategoryFilterId,
+                onCategoryFilterSelected = onCategoryFilterSelected,
                 onSearchChanged = onSearchChanged,
                 onShowOnlyActiveToggled = onShowOnlyActiveToggled,
                 onOpenNewProduct = onOpenNewProduct,
-                onOpenCategoryManager = { showCategoryManager = true },
+                onOpenCategoryManager = onOpenCategoryManager,
                 onOpenEditProduct = onOpenEditProduct,
                 onRequestProductDeletion = onRequestProductDeletion,
                 onGoToNames = onGoToNames,
@@ -408,23 +413,11 @@ private fun ProductsMainContent(
             ) {
                 ProductsGlassCard {
                     if (!productsState.feedbackMessage.isNullOrBlank()) {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("products_feedback_banner"),
-                            shape = RoundedCornerShape(14.dp),
-                            color = V19SuccessContainer,
-                            border = BorderStroke(1.dp, V19MintSuccess.copy(alpha = 0.50f)),
-                        ) {
-                            Text(
-                                text = productsState.feedbackMessage,
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp,
-                                color = V19SuccessInk,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                            )
-                        }
+                        ProductsFeedbackBanner(
+                            message = productsState.feedbackMessage,
+                            isError = productsState.feedbackIsError,
+                            testTag = "products_feedback_banner",
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                     ProductsSectionHeading(
@@ -601,53 +594,9 @@ private fun ProductEditorScreen(
             .fillMaxSize()
             .testTag("product_editor_dialog"),
     ) {
-        // Top Bar com botão de retorno
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(GlassInnerBoxBg)
-                    .border(1.dp, GlassNeonBorder15, RoundedCornerShape(12.dp))
-                    .testTag("topbar_back_button"),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.back_cd),
-                    tint = Color.White,
-                )
-            }
-
-            Column {
-                Text(
-                    text = "CADASTRO DE PRODUTO",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = V19PurpleSoftText,
-                )
-                Text(
-                    text = if (isEditing) "Editar produto" else "Cadastre um novo produto para as vendas",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -1027,66 +976,27 @@ private fun ProductEditorScreen(
 @Composable
 private fun CategoryManagementScreen(
     categories: List<ProductCategory>,
+    feedbackMessage: String?,
+    feedbackIsError: Boolean,
     onOpenNewCategory: () -> Unit,
     onOpenNewSubcategory: (parentCatId: String) -> Unit,
     onEditCategory: (ProductCategory) -> Unit,
     onDeleteCategory: (String) -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var deletingCat by remember { mutableStateOf<ProductCategory?>(null) }
-    val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
+    val mainCategories = remember(categories) {
+        categories.filter { it.parentId == null }.sortedBy { it.name }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .testTag("category_management_dialog"),
     ) {
-        // Top Bar com botão de retorno
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(GlassInnerBoxBg)
-                    .border(1.dp, GlassNeonBorder15, RoundedCornerShape(12.dp))
-                    .testTag("topbar_back_button"),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.back_cd),
-                    tint = Color.White,
-                )
-            }
-
-            Column {
-                Text(
-                    text = "CADASTROS E REGRAS",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = V19PurpleSoftText,
-                )
-                Text(
-                    text = "Categorias",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    color = Color.White,
-                )
-            }
-        }
-
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -1097,6 +1007,15 @@ private fun CategoryManagementScreen(
                         .widthIn(max = 600.dp),
                 ) {
                     ProductsGlassCard {
+                        if (!feedbackMessage.isNullOrBlank()) {
+                            ProductsFeedbackBanner(
+                                message = feedbackMessage,
+                                isError = feedbackIsError,
+                                testTag = "categories_feedback_banner",
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1348,21 +1267,27 @@ private fun CategoryTreeCard(
  */
 @Composable
 private fun CreateEditCategoryScreen(
-    editingCategory: ProductCategory?,
-    initialIsSub: Boolean,
-    initialParentId: String?,
+    editor: CategoryEditorUiState,
     categories: List<ProductCategory>,
-    onSave: (name: String, parentId: String?) -> Unit,
+    onIsSubcategoryChanged: (Boolean) -> Unit,
+    onParentChanged: (String?) -> Unit,
+    onNameChanged: (String) -> Unit,
+    onSave: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isEditing = editingCategory != null
-    var isSubcategory by remember { mutableStateOf(if (isEditing) editingCategory?.parentId != null else initialIsSub) }
-    var selectedParentId by remember { mutableStateOf(if (isEditing) editingCategory?.parentId else initialParentId) }
-    var nameInput by remember { mutableStateOf(editingCategory?.name.orEmpty()) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val isEditing = editor.editingCategoryId != null
+    val isSubcategory = editor.isSubcategory
+    val selectedParentId = editor.parentId
+    val nameInput = editor.nameInput
+    val errorMessage = editor.errorMessage
+    val canChangeTypeAndParent = !isEditing && !editor.isSaving
 
-    val mainCategories = categories.filter { it.parentId == null && (editingCategory == null || it.id != editingCategory.id) }.sortedBy { it.name }
+    val mainCategories = remember(categories, editor.editingCategoryId) {
+        categories
+            .filter { it.parentId == null && (editor.editingCategoryId == null || it.id != editor.editingCategoryId) }
+            .sortedBy { it.name }
+    }
     val currentParentName = mainCategories.firstOrNull { it.id == selectedParentId }?.name
 
     Column(
@@ -1370,51 +1295,9 @@ private fun CreateEditCategoryScreen(
             .fillMaxSize()
             .testTag("create_edit_category_dialog"),
     ) {
-        // Top Bar com botão de retorno
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            IconButton(
-                onClick = onCancel,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(GlassInnerBoxBg)
-                    .border(1.dp, GlassNeonBorder15, RoundedCornerShape(12.dp))
-                    .testTag("topbar_back_button"),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.back_cd),
-                    tint = Color.White,
-                )
-            }
-
-            Column {
-                Text(
-                    text = "CATEGORIAS",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = V19PurpleSoftText,
-                )
-                Text(
-                    text = if (isEditing) "Editar categoria" else "Nova categoria",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    color = Color.White,
-                )
-            }
-        }
-
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
@@ -1429,7 +1312,9 @@ private fun CreateEditCategoryScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .alpha(if (canChangeTypeAndParent) 1f else 0.58f),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             // Opção Categoria Principal
@@ -1437,7 +1322,7 @@ private fun CreateEditCategoryScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .clickable { isSubcategory = false }
+                                    .clickable(enabled = canChangeTypeAndParent) { onIsSubcategoryChanged(false) }
                                     .testTag("radio_category_main"),
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (!isSubcategory) Color(0x66492075) else GlassInnerBoxBg,
@@ -1453,7 +1338,8 @@ private fun CreateEditCategoryScreen(
                                     ) {
                                         RadioButton(
                                             selected = !isSubcategory,
-                                            onClick = { isSubcategory = false },
+                                            enabled = canChangeTypeAndParent,
+                                            onClick = { onIsSubcategoryChanged(false) },
                                             colors = RadioButtonDefaults.colors(selectedColor = V19PurplePrimary),
                                         )
                                         Text(
@@ -1479,7 +1365,7 @@ private fun CreateEditCategoryScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .clickable { isSubcategory = true }
+                                    .clickable(enabled = canChangeTypeAndParent) { onIsSubcategoryChanged(true) }
                                     .testTag("radio_category_sub"),
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (isSubcategory) Color(0x66492075) else GlassInnerBoxBg,
@@ -1495,7 +1381,8 @@ private fun CreateEditCategoryScreen(
                                     ) {
                                         RadioButton(
                                             selected = isSubcategory,
-                                            onClick = { isSubcategory = true },
+                                            enabled = canChangeTypeAndParent,
+                                            onClick = { onIsSubcategoryChanged(true) },
                                             colors = RadioButtonDefaults.colors(selectedColor = V19PurplePrimary),
                                         )
                                         Text(
@@ -1517,6 +1404,17 @@ private fun CreateEditCategoryScreen(
                             }
                         }
 
+                        if (isEditing) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Na edição, apenas o nome pode ser alterado. O tipo e a categoria principal são preservados.",
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontSize = 12.sp,
+                                color = V19GoldAccent,
+                                modifier = Modifier.testTag("category_edit_hierarchy_notice"),
+                            )
+                        }
+
                         // Seletor de Categoria Principal quando for Subcategoria
                         if (isSubcategory) {
                             Spacer(modifier = Modifier.height(14.dp))
@@ -1525,8 +1423,9 @@ private fun CreateEditCategoryScreen(
                                 label = "Categoria principal",
                                 selectedText = currentParentName ?: "Selecione a categoria principal",
                                 options = options,
-                                onOptionSelected = { selectedParentId = it },
+                                onOptionSelected = onParentChanged,
                                 testTag = "category_parent_dropdown",
+                                enabled = canChangeTypeAndParent,
                             )
                         }
 
@@ -1539,10 +1438,8 @@ private fun CreateEditCategoryScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = nameInput,
-                            onValueChange = {
-                                nameInput = it
-                                errorMessage = null
-                            },
+                            onValueChange = onNameChanged,
+                            enabled = !editor.isSaving,
                             singleLine = true,
                             textStyle = TextStyle(
                                 fontFamily = PlusJakartaSansFontFamily,
@@ -1590,7 +1487,7 @@ private fun CreateEditCategoryScreen(
                                 border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
                             ) {
                                 Text(
-                                    text = errorMessage!!,
+                                    text = errorMessage,
                                     fontFamily = PlusJakartaSansFontFamily,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,
@@ -1604,20 +1501,9 @@ private fun CreateEditCategoryScreen(
 
                         // Botão Salvar Categoria
                         ProductsPrimaryCtaButton(
-                            text = "Salvar categoria",
-                            enabled = nameInput.isNotBlank() && (!isSubcategory || selectedParentId != null),
-                            onClick = {
-                                val cleanName = nameInput.trim()
-                                if (cleanName.isBlank()) {
-                                    errorMessage = "Informe o nome da categoria."
-                                    return@ProductsPrimaryCtaButton
-                                }
-                                if (isSubcategory && selectedParentId == null) {
-                                    errorMessage = "Selecione uma categoria principal."
-                                    return@ProductsPrimaryCtaButton
-                                }
-                                onSave(cleanName, if (isSubcategory) selectedParentId else null)
-                            },
+                            text = if (editor.isSaving) "Salvando..." else "Salvar categoria",
+                            enabled = !editor.isSaving && nameInput.isNotBlank() && (!isSubcategory || selectedParentId != null),
+                            onClick = onSave,
                             testTag = "save_category_button",
                         )
 
@@ -1626,13 +1512,43 @@ private fun CreateEditCategoryScreen(
                         // Botão Cancelar
                         ProductsSecondaryOutlinedButton(
                             text = "Cancelar",
-                            onClick = onCancel,
+                            onClick = {
+                                if (!editor.isSaving) onCancel()
+                            },
                             testTag = "cancel_category_button",
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProductsFeedbackBanner(
+    message: String,
+    isError: Boolean,
+    testTag: String,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isError) V19ErrorContainer else V19SuccessContainer,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isError) V19ErrorSoft.copy(alpha = 0.58f) else V19MintSuccess.copy(alpha = 0.50f),
+        ),
+    ) {
+        Text(
+            text = message,
+            fontFamily = PlusJakartaSansFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp,
+            color = if (isError) V19ErrorSoft else V19SuccessInk,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        )
     }
 }
 

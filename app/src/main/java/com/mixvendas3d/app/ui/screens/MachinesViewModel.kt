@@ -53,6 +53,7 @@ data class MachineEditorUiState(
     val creditDefaultRateInput: String = "",
     val brandRatesEnabled: Boolean = false,
     val brandRateInputs: Map<CardBrand, String> = emptyMap(),
+    val brandDebitRateInputs: Map<CardBrand, String> = emptyMap(),
     val installmentsEnabled: Boolean = false,
     val installmentAddonInputs: Map<Int, String> = emptyMap(),
     val isBrandSectionExpanded: Boolean = true,
@@ -144,10 +145,15 @@ class MachinesViewModel(
 
     fun openEditMachineEditor(machine: Machine) {
         val brandInputs = linkedMapOf<CardBrand, String>()
+        val brandDebitInputs = linkedMapOf<CardBrand, String>()
         CardBrand.entries.forEach { brand ->
-            val saved = machine.brandRatesBps[brand]
-            if (saved != null) {
-                brandInputs[brand] = RateFormatter.formatBpsForInput(saved)
+            val savedCredit = machine.brandRatesBps[brand]
+            if (savedCredit != null) {
+                brandInputs[brand] = RateFormatter.formatBpsForInput(savedCredit)
+            }
+            val savedDebit = machine.brandDebitRatesBps[brand]
+            if (savedDebit != null) {
+                brandDebitInputs[brand] = RateFormatter.formatBpsForInput(savedDebit)
             }
         }
         val installmentInputs = linkedMapOf<Int, String>()
@@ -177,6 +183,7 @@ class MachinesViewModel(
             creditDefaultRateInput = RateFormatter.formatBpsForInput(machine.creditDefaultRateBps),
             brandRatesEnabled = machine.brandRatesEnabled,
             brandRateInputs = brandInputs,
+            brandDebitRateInputs = brandDebitInputs,
             installmentsEnabled = machine.installmentsEnabled,
             installmentAddonInputs = installmentInputs,
             isBrandSectionExpanded = true,
@@ -233,6 +240,7 @@ class MachinesViewModel(
             editor.creditDefaultRateInput != baseline.creditDefaultRateInput ||
             editor.brandRatesEnabled != baseline.brandRatesEnabled ||
             editor.brandRateInputs != baseline.brandRateInputs ||
+            editor.brandDebitRateInputs != baseline.brandDebitRateInputs ||
             editor.installmentsEnabled != baseline.installmentsEnabled ||
             editor.installmentAddonInputs != baseline.installmentAddonInputs ||
             editor.maxInstallments != baseline.maxInstallments ||
@@ -273,6 +281,18 @@ class MachinesViewModel(
                 nextMap[brand] = value
             }
             editor.copy(brandRateInputs = nextMap, errorMessage = null)
+        }
+    }
+
+    fun onEditorBrandDebitRateChanged(brand: CardBrand, value: String) {
+        updateEditor { editor ->
+            val nextMap = editor.brandDebitRateInputs.toMutableMap()
+            if (value.isEmpty()) {
+                nextMap.remove(brand)
+            } else {
+                nextMap[brand] = value
+            }
+            editor.copy(brandDebitRateInputs = nextMap, errorMessage = null)
         }
     }
 
@@ -439,14 +459,23 @@ class MachinesViewModel(
             }
 
             val parsedBrands = linkedMapOf<CardBrand, Int>()
+            val parsedBrandDebitRates = linkedMapOf<CardBrand, Int>()
             CardBrand.entries.forEach { brand ->
-                val raw = editor.brandRateInputs[brand].orEmpty()
-                val parsed = MachineValidator.parseOptionalRateInput(
-                    label = "A taxa da bandeira ${brand.label}",
-                    rawInput = raw,
+                val rawCredit = editor.brandRateInputs[brand].orEmpty()
+                val parsedCredit = MachineValidator.parseOptionalRateInput(
+                    label = "A taxa de crédito da bandeira ${brand.label}",
+                    rawInput = rawCredit,
                 )
-                if (parsed != null) {
-                    parsedBrands[brand] = parsed
+                if (parsedCredit != null) {
+                    parsedBrands[brand] = parsedCredit
+                }
+                val rawDebit = editor.brandDebitRateInputs[brand].orEmpty()
+                val parsedDebit = MachineValidator.parseOptionalRateInput(
+                    label = "A taxa de débito da bandeira ${brand.label}",
+                    rawInput = rawDebit,
+                )
+                if (parsedDebit != null) {
+                    parsedBrandDebitRates[brand] = parsedDebit
                 }
             }
 
@@ -495,6 +524,7 @@ class MachinesViewModel(
                 maxInstallments = editor.maxInstallments,
                 clearMaxInstallments = shouldClearMaxInstallments,
                 customBrandRates = parsedCustomBrands,
+                brandDebitRatesBps = parsedBrandDebitRates,
             )
         } catch (ex: MachineValidationException) {
             updateEditor { it.copy(errorMessage = ex.message) }

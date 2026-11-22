@@ -1,12 +1,22 @@
 package com.mixvendas3d.app.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -58,39 +68,16 @@ fun MixVendasAppShell(
         else -> MainTab.entries.firstOrNull { it.route == currentRoute } ?: MainTab.INICIO
     }
 
-    val topBarOverline: String
-    val topBarTitle: String
-    if (currentSubDestination != null) {
-        topBarOverline = currentSubDestination.overline
-        topBarTitle = currentSubDestination.title
-    } else {
-        when (currentTab) {
-            MainTab.INICIO -> {
-                topBarOverline = ""
-                topBarTitle = ""
-            }
-            MainTab.VENDER -> {
-                if (uiState.venderForm.isEditing) {
-                    topBarOverline = "EDIÇÃO DE VENDA"
-                    topBarTitle = stringResource(R.string.sell_edit_title)
-                } else {
-                    topBarOverline = "LANÇAMENTO DE VENDA"
-                    topBarTitle = stringResource(R.string.sell_title)
-                }
-            }
-            MainTab.VENDAS -> {
-                topBarOverline = "HISTÓRICO DETALHADO"
-                topBarTitle = stringResource(R.string.sales_title)
-            }
-            MainTab.FECHAMENTO -> {
-                topBarOverline = "RELATÓRIO DO PERÍODO"
-                topBarTitle = stringResource(R.string.closing_title)
-            }
-            MainTab.MAIS -> {
-                topBarOverline = ""
-                topBarTitle = ""
-            }
+    // Limpa fluxos transitórios de Produtos (editor de produto / gerenciador / editor de categoria)
+    // ao sair definitivamente da rota Produtos, evitando reabertura involuntária ao reentrar.
+    var lastRoute by remember { mutableStateOf(currentRoute) }
+    LaunchedEffect(currentRoute) {
+        if (lastRoute == MaisSubDestination.TYPES_PRODUCTS.route &&
+            currentRoute != MaisSubDestination.TYPES_PRODUCTS.route
+        ) {
+            catalogViewModel.resetProductsTransientFlows()
         }
+        lastRoute = currentRoute
     }
 
     fun navigateToTab(tab: MainTab) {
@@ -117,69 +104,11 @@ fun MixVendasAppShell(
         }
     }
 
-    val hideTopBar = ((currentTab == MainTab.INICIO ||
-        currentTab == MainTab.VENDAS ||
-        currentTab == MainTab.FECHAMENTO ||
-        currentTab == MainTab.MAIS) &&
-        currentSubDestination == null) ||
-        (currentTab == MainTab.VENDER && currentSubDestination == null && !isEditingOnVender)
-
     GlobalCastleWallpaper(modifier = modifier) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            topBar = {
-                if (!hideTopBar) {
-                    if (isEditingOnVender) {
-                        NamesV2TopBar(
-                            title = stringResource(R.string.sell_edit_title),
-                            onBackClick = {
-                                viewModel.handleEditBackRequested {
-                                    navigateToTab(MainTab.VENDAS)
-                                }
-                            },
-                        )
-                    } else if (currentSubDestination == MaisSubDestination.NAMES ||
-                        currentSubDestination == MaisSubDestination.TYPES_PRODUCTS ||
-                        currentSubDestination == MaisSubDestination.MACHINES ||
-                        currentSubDestination == MaisSubDestination.IMPORT_EXPORT ||
-                        currentSubDestination == MaisSubDestination.UPDATE_SYSTEM
-                    ) {
-                        val v2HeaderTitle = when (currentSubDestination) {
-                            MaisSubDestination.NAMES -> stringResource(R.string.names_header_title)
-                            MaisSubDestination.TYPES_PRODUCTS -> stringResource(R.string.products_header_title)
-                            MaisSubDestination.MACHINES -> stringResource(R.string.machines_header_title)
-                            MaisSubDestination.IMPORT_EXPORT -> stringResource(R.string.mais_card_import_export_title)
-                            MaisSubDestination.UPDATE_SYSTEM -> stringResource(R.string.mais_card_update_system_title)
-                            else -> topBarTitle
-                        }
-                        NamesV2TopBar(
-                            title = v2HeaderTitle,
-                            onBackClick = {
-                                if (currentSubDestination == MaisSubDestination.MACHINES &&
-                                    machinesUiState.editor.isOpen
-                                ) {
-                                    machinesViewModel.handleEditorBackRequested()
-                                } else {
-                                    navController.popBackStack()
-                                }
-                            },
-                        )
-                    } else {
-                        V19TopBar(
-                            isHome = false,
-                            title = topBarTitle,
-                            overline = topBarOverline,
-                            showBackButton = currentSubDestination != null,
-                            onBackClick = {
-                                navController.popBackStack()
-                            },
-                            onNewSaleClick = { navigateToTab(MainTab.VENDER) },
-                        )
-                    }
-                }
-            },
             bottomBar = {
                 V19BottomNavigationBar(
                     currentTab = currentTab,
@@ -190,6 +119,10 @@ fun MixVendasAppShell(
             NavHost(
                 navController = navController,
                 startDestination = MainTab.INICIO.route,
+                enterTransition = { fadeIn(animationSpec = tween(durationMillis = 200)) },
+                exitTransition = { fadeOut(animationSpec = tween(durationMillis = 180)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(durationMillis = 200)) },
+                popExitTransition = { fadeOut(animationSpec = tween(durationMillis = 180)) },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -203,37 +136,55 @@ fun MixVendasAppShell(
                 }
 
                 composable(route = MainTab.VENDER.route) {
-                    VenderScreen(
-                        uiState = uiState,
-                        onOpenPicker = { viewModel.setProductPickerOpen(true) },
-                        onClosePicker = { viewModel.setProductPickerOpen(false) },
-                        onPickerSearchChanged = viewModel::onProductPickerSearchChanged,
-                        onToggleProductSelection = viewModel::toggleProductSelection,
-                        onIncrementProductQty = viewModel::incrementProductQuantity,
-                        onDecrementProductQty = viewModel::decrementProductQuantity,
-                        onRemoveProduct = viewModel::removeProductFromSale,
-                        onFinalAmountChanged = viewModel::onFinalAmountInputChanged,
-                        onDiscountTargetSelected = viewModel::onDiscountTargetSelected,
-                        onPaymentMethodSelected = viewModel::onPaymentMethodSelected,
-                        onOpenMachinePicker = { viewModel.setMachinePickerOpen(true) },
-                        onCloseMachinePicker = { viewModel.setMachinePickerOpen(false) },
-                        onMachinePickerSearchChanged = viewModel::onMachinePickerSearchChanged,
-                        onMachineSelected = viewModel::onMachineSelected,
-                        onBrandSelected = viewModel::onBrandSelected,
-                        onInstallmentsSelected = viewModel::onInstallmentsSelected,
-                        onFeeOverrideToggled = viewModel::onFeeOverrideToggled,
-                        onManualRateChanged = viewModel::onManualRateInputChanged,
-                        onNoteChanged = viewModel::onNoteChanged,
-                        onSaveSale = viewModel::saveSale,
-                        onCancelEditing = viewModel::cancelEditing,
-                        onDismissDiscardEdit = viewModel::dismissDiscardEditDialog,
-                        onConfirmDiscardEdit = {
-                            viewModel.confirmDiscardEditing {
-                                navigateToTab(MainTab.VENDAS)
-                            }
-                        },
-                        onBrandKeySelected = viewModel::onBrandKeySelected,
-                    )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (uiState.venderForm.isEditing) {
+                            NamesV2TopBar(
+                                title = stringResource(R.string.sell_edit_title),
+                                onBackClick = {
+                                    viewModel.handleEditBackRequested {
+                                        navigateToTab(MainTab.VENDAS)
+                                    }
+                                },
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            VenderScreen(
+                                uiState = uiState,
+                                onOpenPicker = { viewModel.setProductPickerOpen(true) },
+                                onClosePicker = { viewModel.setProductPickerOpen(false) },
+                                onPickerSearchChanged = viewModel::onProductPickerSearchChanged,
+                                onToggleProductSelection = viewModel::toggleProductSelection,
+                                onIncrementProductQty = viewModel::incrementProductQuantity,
+                                onDecrementProductQty = viewModel::decrementProductQuantity,
+                                onRemoveProduct = viewModel::removeProductFromSale,
+                                onFinalAmountChanged = viewModel::onFinalAmountInputChanged,
+                                onDiscountTargetSelected = viewModel::onDiscountTargetSelected,
+                                onPaymentMethodSelected = viewModel::onPaymentMethodSelected,
+                                onOpenMachinePicker = { viewModel.setMachinePickerOpen(true) },
+                                onCloseMachinePicker = { viewModel.setMachinePickerOpen(false) },
+                                onMachinePickerSearchChanged = viewModel::onMachinePickerSearchChanged,
+                                onMachineSelected = viewModel::onMachineSelected,
+                                onBrandSelected = viewModel::onBrandSelected,
+                                onInstallmentsSelected = viewModel::onInstallmentsSelected,
+                                onFeeOverrideToggled = viewModel::onFeeOverrideToggled,
+                                onManualRateChanged = viewModel::onManualRateInputChanged,
+                                onNoteChanged = viewModel::onNoteChanged,
+                                onSaveSale = viewModel::saveSale,
+                                onCancelEditing = viewModel::cancelEditing,
+                                onDismissDiscardEdit = viewModel::dismissDiscardEditDialog,
+                                onConfirmDiscardEdit = {
+                                    viewModel.confirmDiscardEditing {
+                                        navigateToTab(MainTab.VENDAS)
+                                    }
+                                },
+                                onBrandKeySelected = viewModel::onBrandKeySelected,
+                            )
+                        }
+                    }
                 }
 
                 composable(route = MainTab.VENDAS.route) {
@@ -281,32 +232,125 @@ fun MixVendasAppShell(
 
                 MaisSubDestination.entries.forEach { destination ->
                     composable(route = destination.route) {
-                        MaisDetailScreen(
-                            destination = destination,
-                            uiState = uiState,
-                            catalogUiState = catalogUiState,
-                            catalogViewModel = catalogViewModel,
-                            machinesUiState = machinesUiState,
-                            machinesViewModel = machinesViewModel,
-                            importExportUiState = importExportUiState,
-                            importExportViewModel = importExportViewModel,
-                            systemUpdateUiState = systemUpdateUiState,
-                            systemUpdateViewModel = systemUpdateViewModel,
-                            onOpenDayInVendas = { date ->
-                                viewModel.openSalesForDay(date)
-                                navController.popBackStack()
-                                navigateToTab(MainTab.VENDAS)
-                            },
-                            onNavigateToSubDestination = { subDest ->
-                                navController.navigate(subDest.route) {
-                                    launchSingleTop = true
-                                }
-                            },
-                            onBack = { navController.popBackStack() },
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            DestinationTopBar(
+                                destination = destination,
+                                catalogUiState = catalogUiState,
+                                machinesUiState = machinesUiState,
+                                onBackClick = {
+                                    when (destination) {
+                                        MaisSubDestination.MACHINES -> {
+                                            if (machinesUiState.editor.isOpen) {
+                                                machinesViewModel.handleEditorBackRequested()
+                                            } else {
+                                                navController.popBackStack()
+                                            }
+                                        }
+                                        MaisSubDestination.TYPES_PRODUCTS -> {
+                                            catalogViewModel.handleProductsBackRequested {
+                                                navController.popBackStack()
+                                            }
+                                        }
+                                        else -> {
+                                            navController.popBackStack()
+                                        }
+                                    }
+                                },
+                                onNewSaleClick = { navigateToTab(MainTab.VENDER) },
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                            ) {
+                                MaisDetailScreen(
+                                    destination = destination,
+                                    uiState = uiState,
+                                    catalogUiState = catalogUiState,
+                                    catalogViewModel = catalogViewModel,
+                                    machinesUiState = machinesUiState,
+                                    machinesViewModel = machinesViewModel,
+                                    importExportUiState = importExportUiState,
+                                    importExportViewModel = importExportViewModel,
+                                    systemUpdateUiState = systemUpdateUiState,
+                                    systemUpdateViewModel = systemUpdateViewModel,
+                                    onOpenDayInVendas = { date ->
+                                        viewModel.openSalesForDay(date)
+                                        navController.popBackStack()
+                                        navigateToTab(MainTab.VENDAS)
+                                    },
+                                    onNavigateToSubDestination = { subDest ->
+                                        navController.navigate(subDest.route) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DestinationTopBar(
+    destination: MaisSubDestination,
+    catalogUiState: com.mixvendas3d.app.ui.screens.CatalogUiState,
+    machinesUiState: com.mixvendas3d.app.ui.screens.MachinesUiState,
+    onBackClick: () -> Unit,
+    onNewSaleClick: () -> Unit,
+) {
+    when (destination) {
+        MaisSubDestination.NAMES,
+        MaisSubDestination.TYPES_PRODUCTS,
+        MaisSubDestination.MACHINES,
+        MaisSubDestination.IMPORT_EXPORT,
+        MaisSubDestination.UPDATE_SYSTEM -> {
+            val v2HeaderTitle = when (destination) {
+                MaisSubDestination.NAMES -> stringResource(R.string.names_header_title)
+                MaisSubDestination.TYPES_PRODUCTS -> {
+                    val products = catalogUiState.products
+                    when {
+                        products.categoryEditor.isOpen && products.categoryEditor.editingCategoryId != null -> "Editar categoria"
+                        products.categoryEditor.isOpen -> "Nova categoria"
+                        products.categoryManagerOpen -> "Categorias"
+                        products.editor.isOpen && products.editor.editingProductId != null -> stringResource(R.string.products_edit_title)
+                        products.editor.isOpen -> "Novo produto"
+                        else -> stringResource(R.string.products_header_title)
+                    }
+                }
+                MaisSubDestination.MACHINES -> {
+                    if (machinesUiState.editor.isOpen) {
+                        if (machinesUiState.editor.editingMachineId != null) {
+                            stringResource(R.string.machines_edit_title)
+                        } else {
+                            stringResource(R.string.machines_create_title)
+                        }
+                    } else {
+                        stringResource(R.string.machines_header_title)
+                    }
+                }
+                MaisSubDestination.IMPORT_EXPORT -> stringResource(R.string.mais_card_import_export_title)
+                MaisSubDestination.UPDATE_SYSTEM -> stringResource(R.string.mais_card_update_system_title)
+                MaisSubDestination.DAILY_SALES -> destination.title
+            }
+            NamesV2TopBar(
+                title = v2HeaderTitle,
+                onBackClick = onBackClick,
+            )
+        }
+        MaisSubDestination.DAILY_SALES -> {
+            V19TopBar(
+                isHome = false,
+                title = destination.title,
+                overline = destination.overline,
+                showBackButton = true,
+                onBackClick = onBackClick,
+                onNewSaleClick = onNewSaleClick,
+            )
         }
     }
 }

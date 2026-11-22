@@ -2187,8 +2187,11 @@ object JsonBackupMergePlanner {
                     return "Bandeira personalizada duplicada '$decodedName' na maquininha '${machine.id}'."
                 }
             }
-            if (br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+            if (br.rateBps != null && br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
                 return "Taxa da bandeira '${br.brandKey}' fora do intervalo na maquininha '${machine.id}'."
+            }
+            if (br.debitRateBps != null && br.debitRateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+                return "Taxa de débito da bandeira '${br.brandKey}' fora do intervalo na maquininha '${machine.id}'."
             }
         }
         installmentRates.forEach { ir ->
@@ -2378,7 +2381,7 @@ object JsonBackupMergePlanner {
         }
         feed("machineBrandRates:${snapshot.machineBrandRates.size}")
         snapshot.machineBrandRates.sortedWith(compareBy({ it.machineId }, { it.brandKey })).forEach {
-            feed("${it.machineId}|${it.brandKey}|${it.rateBps}")
+            feed("${it.machineId}|${it.brandKey}|${it.rateBps}|${it.debitRateBps}")
         }
         feed("machineInstallmentRates:${snapshot.machineInstallmentRates.size}")
         snapshot.machineInstallmentRates.sortedWith(compareBy({ it.machineId }, { it.installments })).forEach {

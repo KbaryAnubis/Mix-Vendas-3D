@@ -185,7 +185,8 @@ fun VenderScreen(
     }
     val discountCents = (subtotalCents - effectiveFinalCents).coerceAtLeast(0L)
     val finalAmountError = when {
-        selectedEntries.isEmpty() || form.finalAmountInput.isBlank() -> null
+        selectedEntries.isEmpty() -> null
+        form.finalAmountInput.isBlank() -> if (form.finalAmountTouched) "Informe o valor final da venda." else null
         typedFinalCents == null -> "Valor final inválido (ex.: 95,00)."
         typedFinalCents <= 0L -> "O valor final deve ser maior que zero."
         typedFinalCents > subtotalCents -> "Não pode ultrapassar o subtotal original."
@@ -1506,6 +1507,19 @@ private fun SimpleDropdownField(
     }
 }
 
+private data class PickerCategoryGroup(
+    val mainCategory: ProductCategory,
+    val subcategories: List<ProductCategory>,
+    val directProducts: List<Product>,
+    val subProductsBySubId: Map<String, List<Product>>,
+    val totalCount: Int,
+)
+
+private data class PickerCatalogStructure(
+    val uncategorizedProducts: List<Product>,
+    val categoryGroups: List<PickerCategoryGroup>,
+)
+
 @Composable
 private fun SearchableProductPickerDialog(
     products: List<Product>,
@@ -1521,11 +1535,60 @@ private fun SearchableProductPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val ptBr = remember { Locale.forLanguageTag("pt-BR") }
-    val normalizedQuery = searchQuery.trim().lowercase(ptBr)
+    val normalizedQuery = remember(searchQuery, ptBr) { searchQuery.trim().lowercase(ptBr) }
     val isSearching = normalizedQuery.isNotEmpty()
-    val filteredProducts = products.filter {
-        !isSearching || it.name.lowercase(ptBr).contains(normalizedQuery)
+    val filteredProducts = remember(products, normalizedQuery, ptBr) {
+        if (normalizedQuery.isEmpty()) {
+            products
+        } else {
+            products.filter { it.name.lowercase(ptBr).contains(normalizedQuery) }
+        }
     }
+    val pickerStructure = remember(filteredProducts, categories) {
+        if (categories.isEmpty()) {
+            null
+        } else {
+            val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
+            val mainCategoryIds = mainCategories.map { it.id }.toSet()
+            val subcategoriesByParent = categories
+                .filter { it.parentId != null }
+                .groupBy { it.parentId!! }
+                .mapValues { (_, list) -> list.sortedBy { it.name } }
+
+            val uncategorizedProducts = filteredProducts.filter {
+                it.categoryId == null || !mainCategoryIds.contains(it.categoryId)
+            }
+
+            val groups = mainCategories.mapNotNull { mainCat ->
+                val subcategories = subcategoriesByParent[mainCat.id].orEmpty()
+                val validSubIds = subcategories.map { it.id }.toSet()
+                val productsInMain = filteredProducts.filter { it.categoryId == mainCat.id }
+                val directProducts = productsInMain.filter {
+                    it.subcategoryId == null || !validSubIds.contains(it.subcategoryId)
+                }
+                val subProductsBySubId = subcategories.associate { sub ->
+                    sub.id to productsInMain.filter { it.subcategoryId == sub.id }
+                }
+                val totalCount = directProducts.size + subProductsBySubId.values.sumOf { it.size }
+                if (totalCount > 0) {
+                    PickerCategoryGroup(
+                        mainCategory = mainCat,
+                        subcategories = subcategories,
+                        directProducts = directProducts,
+                        subProductsBySubId = subProductsBySubId,
+                        totalCount = totalCount,
+                    )
+                } else {
+                    null
+                }
+            }
+            PickerCatalogStructure(
+                uncategorizedProducts = uncategorizedProducts,
+                categoryGroups = groups,
+            )
+        }
+    }
+
     val distinctSelectedCount = selectedQuantities.count { it.value > 0 }
     val totalUnitsCount = selectedQuantities.values.sumOf { it.coerceAtLeast(0) }
     val subtotalCents = MixVendasShellViewModel.computeSelectedSubtotalCents(selectedQuantities, products)
@@ -1538,256 +1601,249 @@ private fun SearchableProductPickerDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .widthIn(max = 580.dp)
-                .fillMaxHeight(0.90f)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .imePadding()
-                .shadow(
-                    elevation = 18.dp,
-                    shape = dialogShape,
-                    ambientColor = HomeCtaShadowGlow.copy(alpha = 0.50f),
-                    spotColor = HomeCtaShadowGlow.copy(alpha = 0.65f),
-                )
-                .testTag("product_picker_dialog"),
-            shape = dialogShape,
-            color = Color.Transparent,
-            border = BorderStroke(1.4.dp, HomeCardNeonBorder.copy(alpha = 0.78f)),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xF5271044), Color(0xF7140724)),
-                        ),
+                    .fillMaxWidth()
+                    .widthIn(max = 580.dp)
+                    .fillMaxHeight(0.94f)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = dialogShape,
+                        ambientColor = HomeCtaShadowGlow.copy(alpha = 0.50f),
+                        spotColor = HomeCtaShadowGlow.copy(alpha = 0.65f),
                     )
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .testTag("product_picker_dialog"),
+                shape = dialogShape,
+                color = Color.Transparent,
+                border = BorderStroke(1.4.dp, HomeCardNeonBorder.copy(alpha = 0.78f)),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xF5271044), Color(0xF7140724)),
+                            ),
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = stringResource(R.string.product_picker_title),
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 20.sp,
-                            lineHeight = 25.sp,
-                            letterSpacing = (-0.3).sp,
-                            color = Color.White,
-                            modifier = Modifier.semantics { heading() },
-                        )
-                        Text(
-                            text = stringResource(R.string.product_picker_subtitle),
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = HomeCardLabelInk.copy(alpha = 0.88f),
-                        )
-                    }
-                    Surface(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("product_picker_close_x_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xD92B124D),
-                        border = BorderStroke(1.1.dp, HomeCardNeonBorder.copy(alpha = 0.65f)),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = stringResource(R.string.product_picker_close_cd),
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.product_picker_title),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 20.sp,
+                                lineHeight = 25.sp,
+                                letterSpacing = (-0.3).sp,
+                                color = Color.White,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                            Text(
+                                text = stringResource(R.string.product_picker_subtitle),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = HomeCardLabelInk.copy(alpha = 0.88f),
                             )
                         }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchChanged,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp,
-                        color = Color.White,
-                    ),
-                    leadingIcon = {
-                        Mv3dIcon(
-                            iconRes = R.drawable.mv3d_buscar,
-                            contentDescription = null,
-                            size = 32.dp,
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(
-                                onClick = { onSearchChanged("") },
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("product_picker_clear_search"),
-                            ) {
+                        Surface(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("product_picker_close_x_button"),
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xD92B124D),
+                            border = BorderStroke(1.1.dp, HomeCardNeonBorder.copy(alpha = 0.65f)),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.product_picker_clear_search_cd),
-                                    tint = V19PurpleSoftText,
-                                    modifier = Modifier.size(18.dp),
+                                    contentDescription = stringResource(R.string.product_picker_close_cd),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                         }
-                    },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.product_picker_search_placeholder),
+                    }
+
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchChanged,
+                        singleLine = true,
+                        textStyle = TextStyle(
                             fontFamily = PlusJakartaSansFontFamily,
-                            fontSize = 14.sp,
-                            color = HomeCardLabelInk.copy(alpha = 0.70f),
-                        )
-                    },
-                    colors = namesDarkInputColors(),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 50.dp)
-                        .testTag("product_picker_search"),
-                )
-
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .testTag("product_picker_list"),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp),
-                ) {
-                    if (filteredProducts.isEmpty()) {
-                        item {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                shape = RoundedCornerShape(18.dp),
-                                color = GlassInnerBoxBg,
-                                border = BorderStroke(1.dp, GlassNeonBorder15),
-                            ) {
-                                Text(
-                                    text = if (products.isEmpty()) {
-                                        stringResource(R.string.product_picker_empty_catalog)
-                                    } else {
-                                        stringResource(R.string.product_picker_empty_search)
-                                    },
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    color = V19PurpleSoftText,
-                                    modifier = Modifier
-                                        .padding(horizontal = 16.dp, vertical = 20.dp)
-                                        .testTag("picker_empty_state"),
-                                )
-                            }
-                        }
-                    } else if (categories.isEmpty()) {
-                        items(filteredProducts, key = { it.id }) { product ->
-                            val qty = selectedQuantities[product.id] ?: 0
-                            val isHist = historicalIds.contains(product.id)
-                            val catalogNow = activeCatalogMap[product.id]
-                            val showHistoricalBadge = isHist && (
-                                catalogNow == null ||
-                                    catalogNow.name != product.name ||
-                                    catalogNow.price != product.price ||
-                                    catalogNow.participants != product.participants
-                                )
-                            VenderProductPickerRow(
-                                product = product,
-                                quantity = qty,
-                                maxQuantity = SaleFinancialEngine.MAX_ITEM_QUANTITY,
-                                showHistoricalBadge = showHistoricalBadge,
-                                onToggle = { onToggleProduct(product.id) },
-                                onDecrement = { onDecrementQty(product.id) },
-                                onIncrement = { onIncrementQty(product.id) },
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp,
+                            color = Color.White,
+                        ),
+                        leadingIcon = {
+                            Mv3dIcon(
+                                iconRes = R.drawable.mv3d_buscar,
+                                contentDescription = null,
+                                size = 32.dp,
                             )
-                        }
-                    } else {
-                        val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
-                        val mainCategoryIds = mainCategories.map { it.id }.toSet()
-                        val subcategoriesByParent = categories.filter { it.parentId != null }.groupBy { it.parentId!! }
-
-                        val uncategorizedProducts = filteredProducts.filter {
-                            it.categoryId == null || !mainCategoryIds.contains(it.categoryId)
-                        }
-
-                        // Section 1: Sem Categoria
-                        if (uncategorizedProducts.isNotEmpty()) {
-                            val isUncatExpanded = "uncategorized" in expandedCategoryIds || isSearching
-                            item(key = "picker_cat_header_uncategorized") {
-                                PickerCategoryHeader(
-                                    categoryName = "Sem categoria",
-                                    productCount = uncategorizedProducts.size,
-                                    isExpanded = isUncatExpanded,
-                                    onToggleExpand = {
-                                        expandedCategoryIds = if (isUncatExpanded && !isSearching) {
-                                            expandedCategoryIds - "uncategorized"
-                                        } else {
-                                            expandedCategoryIds + "uncategorized"
-                                        }
-                                    },
-                                    testTag = "picker_category_header_uncategorized",
-                                )
-                            }
-                            if (isUncatExpanded) {
-                                items(uncategorizedProducts, key = { it.id }) { product ->
-                                    val qty = selectedQuantities[product.id] ?: 0
-                                    val isHist = historicalIds.contains(product.id)
-                                    val catalogNow = activeCatalogMap[product.id]
-                                    val showHistoricalBadge = isHist && (
-                                        catalogNow == null ||
-                                            catalogNow.name != product.name ||
-                                            catalogNow.price != product.price ||
-                                            catalogNow.participants != product.participants
-                                        )
-                                    VenderProductPickerRow(
-                                        product = product,
-                                        quantity = qty,
-                                        maxQuantity = SaleFinancialEngine.MAX_ITEM_QUANTITY,
-                                        showHistoricalBadge = showHistoricalBadge,
-                                        onToggle = { onToggleProduct(product.id) },
-                                        onDecrement = { onDecrementQty(product.id) },
-                                        onIncrement = { onIncrementQty(product.id) },
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { onSearchChanged("") },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("product_picker_clear_search"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = stringResource(R.string.product_picker_clear_search_cd),
+                                        tint = V19PurpleSoftText,
+                                        modifier = Modifier.size(18.dp),
                                     )
                                 }
                             }
-                        }
+                        },
+                        placeholder = {
+                            Text(
+                                text = stringResource(R.string.product_picker_search_placeholder),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontSize = 14.sp,
+                                color = HomeCardLabelInk.copy(alpha = 0.70f),
+                            )
+                        },
+                        colors = namesDarkInputColors(),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 50.dp)
+                            .testTag("product_picker_search"),
+                    )
 
-                        // Section 2: Main Categories & Subcategories
-                        mainCategories.forEach { mainCat ->
-                            val subcategories = subcategoriesByParent[mainCat.id].orEmpty().sortedBy { it.name }
-                            val directProducts = filteredProducts.filter { it.categoryId == mainCat.id && it.subcategoryId == null }
-                            val subProductsMap = subcategories.associateWith { sub ->
-                                filteredProducts.filter { it.subcategoryId == sub.id }
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .testTag("product_picker_list"),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp),
+                    ) {
+                        if (filteredProducts.isEmpty()) {
+                            item(key = "picker_empty_state_item") {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = GlassInnerBoxBg,
+                                    border = BorderStroke(1.dp, GlassNeonBorder15),
+                                ) {
+                                    Text(
+                                        text = if (products.isEmpty()) {
+                                            stringResource(R.string.product_picker_empty_catalog)
+                                        } else {
+                                            stringResource(R.string.product_picker_empty_search)
+                                        },
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        color = V19PurpleSoftText,
+                                        modifier = Modifier
+                                            .padding(horizontal = 16.dp, vertical = 20.dp)
+                                            .testTag("picker_empty_state"),
+                                    )
+                                }
                             }
-                            val totalCategoryProductCount = directProducts.size + subProductsMap.values.sumOf { it.size }
+                        } else if (pickerStructure == null) {
+                            items(filteredProducts, key = { it.id }) { product ->
+                                val qty = selectedQuantities[product.id] ?: 0
+                                val isHist = historicalIds.contains(product.id)
+                                val catalogNow = activeCatalogMap[product.id]
+                                val showHistoricalBadge = isHist && (
+                                    catalogNow == null ||
+                                        catalogNow.name != product.name ||
+                                        catalogNow.price != product.price ||
+                                        catalogNow.participants != product.participants
+                                    )
+                                VenderProductPickerRow(
+                                    product = product,
+                                    quantity = qty,
+                                    maxQuantity = SaleFinancialEngine.MAX_ITEM_QUANTITY,
+                                    showHistoricalBadge = showHistoricalBadge,
+                                    onToggle = { onToggleProduct(product.id) },
+                                    onDecrement = { onDecrementQty(product.id) },
+                                    onIncrement = { onIncrementQty(product.id) },
+                                )
+                            }
+                        } else {
+                            // Section 1: Sem Categoria
+                            if (pickerStructure.uncategorizedProducts.isNotEmpty()) {
+                                val isUncatExpanded = "uncategorized" in expandedCategoryIds || isSearching
+                                item(key = "picker_cat_header_uncategorized") {
+                                    PickerCategoryHeader(
+                                        categoryName = "Sem categoria",
+                                        productCount = pickerStructure.uncategorizedProducts.size,
+                                        isExpanded = isUncatExpanded,
+                                        onToggleExpand = {
+                                            expandedCategoryIds = if (isUncatExpanded && !isSearching) {
+                                                expandedCategoryIds - "uncategorized"
+                                            } else {
+                                                expandedCategoryIds + "uncategorized"
+                                            }
+                                        },
+                                        testTag = "picker_category_header_uncategorized",
+                                    )
+                                }
+                                if (isUncatExpanded) {
+                                    items(pickerStructure.uncategorizedProducts, key = { it.id }) { product ->
+                                        val qty = selectedQuantities[product.id] ?: 0
+                                        val isHist = historicalIds.contains(product.id)
+                                        val catalogNow = activeCatalogMap[product.id]
+                                        val showHistoricalBadge = isHist && (
+                                            catalogNow == null ||
+                                                catalogNow.name != product.name ||
+                                                catalogNow.price != product.price ||
+                                                catalogNow.participants != product.participants
+                                            )
+                                        VenderProductPickerRow(
+                                            product = product,
+                                            quantity = qty,
+                                            maxQuantity = SaleFinancialEngine.MAX_ITEM_QUANTITY,
+                                            showHistoricalBadge = showHistoricalBadge,
+                                            onToggle = { onToggleProduct(product.id) },
+                                            onDecrement = { onDecrementQty(product.id) },
+                                            onIncrement = { onIncrementQty(product.id) },
+                                        )
+                                    }
+                                }
+                            }
 
-                            if (totalCategoryProductCount > 0) {
+                            // Section 2: Main Categories & Subcategories (with safe fallback for orphaned subcategoryId)
+                            pickerStructure.categoryGroups.forEach { group ->
+                                val mainCat = group.mainCategory
                                 val isCatExpanded = mainCat.id in expandedCategoryIds || isSearching
                                 item(key = "picker_cat_header_${mainCat.id}") {
                                     PickerCategoryHeader(
                                         categoryName = mainCat.name,
-                                        productCount = totalCategoryProductCount,
+                                        productCount = group.totalCount,
                                         isExpanded = isCatExpanded,
                                         onToggleExpand = {
                                             expandedCategoryIds = if (isCatExpanded && !isSearching) {
@@ -1801,9 +1857,8 @@ private fun SearchableProductPickerDialog(
                                 }
 
                                 if (isCatExpanded) {
-                                    if (subcategories.isEmpty()) {
-                                        val catProducts = filteredProducts.filter { it.categoryId == mainCat.id }
-                                        items(catProducts, key = { it.id }) { product ->
+                                    if (group.directProducts.isNotEmpty()) {
+                                        items(group.directProducts, key = { "direct_${it.id}" }) { product ->
                                             val qty = selectedQuantities[product.id] ?: 0
                                             val isHist = historicalIds.contains(product.id)
                                             val catalogNow = activeCatalogMap[product.id]
@@ -1823,9 +1878,28 @@ private fun SearchableProductPickerDialog(
                                                 onIncrement = { onIncrementQty(product.id) },
                                             )
                                         }
-                                    } else {
-                                        if (directProducts.isNotEmpty()) {
-                                            items(directProducts, key = { "direct_${it.id}" }) { product ->
+                                    }
+
+                                    group.subcategories.forEach { subCat ->
+                                        val subProds = group.subProductsBySubId[subCat.id].orEmpty()
+                                        val isSubExpanded = subCat.id in expandedSubcategoryIds || isSearching
+                                        item(key = "picker_subcat_header_${subCat.id}") {
+                                            PickerSubcategoryHeader(
+                                                subcategoryName = subCat.name,
+                                                productCount = subProds.size,
+                                                isExpanded = isSubExpanded,
+                                                onToggleExpand = {
+                                                    expandedSubcategoryIds = if (isSubExpanded && !isSearching) {
+                                                        expandedSubcategoryIds - subCat.id
+                                                    } else {
+                                                        expandedSubcategoryIds + subCat.id
+                                                    }
+                                                },
+                                                testTag = "picker_subcategory_header_${subCat.id}",
+                                            )
+                                        }
+                                        if (isSubExpanded && subProds.isNotEmpty()) {
+                                            items(subProds, key = { "sub_${it.id}" }) { product ->
                                                 val qty = selectedQuantities[product.id] ?: 0
                                                 val isHist = historicalIds.contains(product.id)
                                                 val catalogNow = activeCatalogMap[product.id]
@@ -1846,61 +1920,19 @@ private fun SearchableProductPickerDialog(
                                                 )
                                             }
                                         }
-
-                                        subcategories.forEach { subCat ->
-                                            val subProds = subProductsMap[subCat].orEmpty()
-                                            val isSubExpanded = subCat.id in expandedSubcategoryIds || isSearching
-                                            item(key = "picker_subcat_header_${subCat.id}") {
-                                                PickerSubcategoryHeader(
-                                                    subcategoryName = subCat.name,
-                                                    productCount = subProds.size,
-                                                    isExpanded = isSubExpanded,
-                                                    onToggleExpand = {
-                                                        expandedSubcategoryIds = if (isSubExpanded && !isSearching) {
-                                                            expandedSubcategoryIds - subCat.id
-                                                        } else {
-                                                            expandedSubcategoryIds + subCat.id
-                                                        }
-                                                    },
-                                                    testTag = "picker_subcategory_header_${subCat.id}",
-                                                )
-                                            }
-                                            if (isSubExpanded && subProds.isNotEmpty()) {
-                                                items(subProds, key = { "sub_${it.id}" }) { product ->
-                                                    val qty = selectedQuantities[product.id] ?: 0
-                                                    val isHist = historicalIds.contains(product.id)
-                                                    val catalogNow = activeCatalogMap[product.id]
-                                                    val showHistoricalBadge = isHist && (
-                                                        catalogNow == null ||
-                                                            catalogNow.name != product.name ||
-                                                            catalogNow.price != product.price ||
-                                                            catalogNow.participants != product.participants
-                                                        )
-                                                    VenderProductPickerRow(
-                                                        product = product,
-                                                        quantity = qty,
-                                                        maxQuantity = SaleFinancialEngine.MAX_ITEM_QUANTITY,
-                                                        showHistoricalBadge = showHistoricalBadge,
-                                                        onToggle = { onToggleProduct(product.id) },
-                                                        onDecrement = { onDecrementQty(product.id) },
-                                                        onIncrement = { onIncrementQty(product.id) },
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                VenderProductPickerFooter(
-                    distinctProductsCount = distinctSelectedCount,
-                    totalUnitsCount = totalUnitsCount,
-                    subtotalCents = subtotalCents,
-                    onDoneClick = onDismiss,
-                )
+                    VenderProductPickerFooter(
+                        distinctProductsCount = distinctSelectedCount,
+                        totalUnitsCount = totalUnitsCount,
+                        subtotalCents = subtotalCents,
+                        onDoneClick = onDismiss,
+                    )
+                }
             }
         }
     }

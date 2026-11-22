@@ -62,11 +62,13 @@ class RoomMachineRepository(
             updatedAtEpochMs = now,
             maxInstallments = if (validated.clearMaxInstallments) null else validated.maxInstallments,
         )
-        val standardBrandEntities = validated.brandRatesBps.map { (brand, rateBps) ->
+        val standardBrands = (validated.brandRatesBps.keys + validated.brandDebitRatesBps.keys)
+        val standardBrandEntities = standardBrands.map { brand ->
             MachineBrandRateEntity(
                 machineId = machineId,
                 brandKey = brand.storageKey,
-                rateBps = rateBps,
+                rateBps = validated.brandRatesBps[brand],
+                debitRateBps = validated.brandDebitRatesBps[brand],
             )
         }
         val customBrandEntities = validated.customBrandRates.orEmpty().map { custom ->
@@ -137,11 +139,13 @@ class RoomMachineRepository(
             preserved
         }
 
-        val standardBrandEntities = validated.brandRatesBps.map { (brand, rateBps) ->
+        val standardBrands = (validated.brandRatesBps.keys + validated.brandDebitRatesBps.keys)
+        val standardBrandEntities = standardBrands.map { brand ->
             MachineBrandRateEntity(
                 machineId = machineId,
                 brandKey = brand.storageKey,
-                rateBps = rateBps,
+                rateBps = validated.brandRatesBps[brand],
+                debitRateBps = validated.brandDebitRatesBps[brand],
             )
         }
         val customBrandEntities = resolvedCustomBrands.map { custom ->

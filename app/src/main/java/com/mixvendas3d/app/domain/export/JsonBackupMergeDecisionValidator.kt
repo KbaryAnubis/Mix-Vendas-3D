@@ -1166,8 +1166,11 @@ object JsonBackupMergeDecisionValidator {
                     return "Bandeira personalizada duplicada '$decodedName' na maquininha '${machine.id}'."
                 }
             }
-            if (br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+            if (br.rateBps != null && br.rateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
                 return "Taxa da bandeira '${br.brandKey}' fora do intervalo na maquininha '${machine.id}'."
+            }
+            if (br.debitRateBps != null && br.debitRateBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+                return "Taxa de débito da bandeira '${br.brandKey}' fora do intervalo na maquininha '${machine.id}'."
             }
         }
         val seenInstallments = HashSet<Int>(installmentRates.size)
