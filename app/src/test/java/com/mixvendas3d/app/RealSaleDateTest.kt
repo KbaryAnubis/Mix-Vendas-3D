@@ -3,14 +3,20 @@ package com.mixvendas3d.app
 import android.content.Context
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mixvendas3d.app.data.local.AppDatabase
@@ -579,13 +585,20 @@ class RealSaleDateTest {
 
         seedCatalogForUi(app, productId = "prod-ui-500", productName = "Escultura 3D Premium", priceCents = 50_000L)
 
-        // 1) Abre aba Vender e verifica data padrão = Hoje
+        // 1) Abre aba Vender e verifica data padrão = Hoje e toggle desativado (calendário oculto)
         composeRule.onNodeWithTag("nav_tab_vender").performClick()
         waitForTag("screen_vender")
         composeRule.onNodeWithTag("sale_date_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOff()
+        composeRule.onNodeWithTag("sale_date_selector_button").assertDoesNotExist()
         composeRule.onNodeWithTag("sale_date_value_text").assertTextContains(todayFormatted)
 
-        // 2) Abre o seletor de data e escolhe Ontem (atalho seleciona e fecha o modal)
+        // 2) Ativa "Usar data personalizada", libera calendário e escolhe Ontem (atalho seleciona e fecha o modal)
+        composeRule.onNodeWithTag("custom_sale_date_switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOn()
+        waitForTag("sale_date_selector_button")
+
         composeRule.onNodeWithTag("sale_date_selector_button").performScrollTo().performClick()
         waitForTag("sale_date_picker_dialog")
         composeRule.onNodeWithTag("sale_date_quick_yesterday").performClick()
@@ -749,5 +762,109 @@ class RealSaleDateTest {
         assertNotNull(untouched)
         assertEquals(yesterday, DailySalesAggregator.toLocalDate(untouched!!.soldAtEpochMs, zoneId))
         assertFalse(DailySalesAggregator.toLocalDate(untouched.soldAtEpochMs, zoneId) == LocalDate.now(zoneId))
+    }
+
+    @Test
+    fun `07 custom sale date toggle starts disabled, unlocks calendar when enabled, and resets to today when disabled`() {
+        val app = context as MixVendasApplication
+        val zoneId = ZoneId.systemDefault()
+        val today = LocalDate.now(zoneId)
+        val yesterday = today.minusDays(1)
+        val todayFormatted = CurrencyFormatter.formatLocalDate(today)
+        val yesterdayFormatted = CurrencyFormatter.formatLocalDate(yesterday)
+
+        seedCatalogForUi(app, productId = "prod-toggle-test", productName = "Luminaria 3D", priceCents = 15_000L)
+
+        composeRule.onNodeWithTag("nav_tab_vender").performClick()
+        waitForTag("screen_vender")
+        composeRule.onNodeWithTag("sale_date_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Usar data personalizada").assertIsDisplayed()
+        composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOff()
+        composeRule.onNodeWithTag("sale_date_selector_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("sale_date_value_text").assertTextContains(todayFormatted)
+
+        // Ativa a opção e escolhe data anterior (ontem)
+        composeRule.onNodeWithTag("custom_sale_date_switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOn()
+        waitForTag("sale_date_selector_button")
+
+        composeRule.onNodeWithTag("sale_date_selector_button").performScrollTo().performClick()
+        waitForTag("sale_date_picker_dialog")
+        composeRule.onNodeWithTag("sale_date_quick_yesterday").performClick()
+        waitForTagGone("sale_date_picker_dialog")
+        composeRule.onNodeWithTag("sale_date_value_text").assertTextContains(yesterdayFormatted)
+
+        // Desativa novamente -> descarta data personalizada, retorna à data atual e oculta o calendário
+        composeRule.onNodeWithTag("custom_sale_date_switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOff()
+        composeRule.onNodeWithTag("sale_date_selector_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("sale_date_value_text").assertTextContains(todayFormatted)
+
+        // Salva a venda com a opção desativada -> deve gravar na data atual do aparelho
+        composeRule.onNodeWithTag("open_product_picker_button").performScrollTo().performClick()
+        waitForTag("product_picker_dialog")
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            runCatching {
+                composeRule.onNodeWithTag("product_picker_list")
+                    .performScrollToNode(hasTestTag("picker_row_prod-toggle-test"))
+                true
+            }.getOrDefault(false)
+        }
+        composeRule.onNodeWithTag("picker_checkbox_prod-toggle-test").performClick()
+        composeRule.onNodeWithTag("close_product_picker_button").performClick()
+        waitForTagGone("product_picker_dialog")
+
+        composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
+        waitForTag("vender_feedback_banner")
+        composeRule.onNodeWithTag("custom_sale_date_switch").performScrollTo().assertIsOff()
+        composeRule.onNodeWithTag("sale_date_selector_button").assertDoesNotExist()
+
+        val saved = runBlocking(Dispatchers.IO) { app.saleRepository.observeSales().first().single() }
+        assertEquals(today, DailySalesAggregator.toLocalDate(saved.soldAtEpochMs, zoneId))
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w360dp-h640dp-xxhdpi")
+    fun `08 products screen stacks Novo produto above Categorias vertically with full visibility and actions`() {
+        composeRule.onNodeWithTag("nav_tab_mais").performClick()
+        waitForTag("screen_mais")
+        composeRule.onNodeWithTag("mais_item_types_products").performScrollTo().performClick()
+        waitForTag("screen_products")
+
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("manage_categories_button"))
+
+        val newProductNode = composeRule.onNodeWithTag("new_product_button").assertIsDisplayed()
+        val categoriesNode = composeRule.onNodeWithTag("manage_categories_button").assertIsDisplayed()
+        composeRule.onNodeWithText("Categorias").assertIsDisplayed()
+
+        val newBounds = newProductNode.getUnclippedBoundsInRoot()
+        val catBounds = categoriesNode.getUnclippedBoundsInRoot()
+
+        // Disposição vertical obrigatória: Novo produto em cima, Categorias logo abaixo, mesma largura total
+        assertTrue(
+            "Esperava Novo produto (${newBounds.bottom}) acima de Categorias (${catBounds.top})",
+            newBounds.bottom <= catBounds.top,
+        )
+        assertTrue(
+            "Esperava mesma largura aproximada para ambos os botões (${newBounds.width} vs ${catBounds.width})",
+            kotlin.math.abs(newBounds.width.value - catBounds.width.value) <= 2f,
+        )
+        assertTrue("Esperava altura mínima >= 48dp para Categorias", catBounds.height.value >= 48f)
+
+        // Ação de Categorias funciona
+        categoriesNode.performClick()
+        waitForTag("category_management_dialog")
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("screen_products")
+
+        // Ação de Novo produto funciona
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("new_product_button"))
+        composeRule.onNodeWithTag("new_product_button").performClick()
+        waitForTag("product_editor_dialog")
     }
 }

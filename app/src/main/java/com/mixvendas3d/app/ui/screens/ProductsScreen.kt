@@ -375,26 +375,22 @@ private fun ProductsMainContent(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            ProductsPrimaryCtaButton(
-                                text = "Novo produto",
-                                enabled = true,
-                                onClick = onOpenNewProduct,
-                                testTag = "new_product_button",
-                                iconRes = R.drawable.mv3d_produtos,
-                            )
-                        }
-                        Box(modifier = Modifier.weight(1f)) {
-                            ProductsSecondaryOutlinedButton(
-                                text = "Categorias",
-                                onClick = onOpenCategoryManager,
-                                testTag = "manage_categories_button",
-                            )
-                        }
+                        ProductsPrimaryCtaButton(
+                            text = "Novo produto",
+                            enabled = true,
+                            onClick = onOpenNewProduct,
+                            testTag = "new_product_button",
+                            iconRes = R.drawable.mv3d_produtos,
+                        )
+                        ProductsSecondaryOutlinedButton(
+                            text = "Categorias",
+                            onClick = onOpenCategoryManager,
+                            testTag = "manage_categories_button",
+                        )
                     }
 
                     if (people.isEmpty()) {

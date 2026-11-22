@@ -49,10 +49,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -167,10 +171,17 @@ fun VenderScreen(
     onBrandKeySelected: (String) -> Unit = { key ->
         CardBrand.fromStorageKey(key)?.let(onBrandSelected)
     },
+    onCustomSaleDateToggled: (Boolean) -> Unit = {},
     onSaleDateSelected: (LocalDate) -> Unit = {},
 ) {
     val form = uiState.venderForm
     var saleDatePickerOpen by rememberSaveable { mutableStateOf(false) }
+    val canOpenSaleDateCalendar = form.isEditing || form.saleDateCustomized
+    LaunchedEffect(canOpenSaleDateCalendar) {
+        if (!canOpenSaleDateCalendar) {
+            saleDatePickerOpen = false
+        }
+    }
     val activeCatalogMap = remember(uiState.activeCatalogProducts) {
         uiState.activeCatalogProducts.associateBy { it.id }
     }
@@ -322,12 +333,23 @@ fun VenderScreen(
                     }
                 }
 
-                // Seletor de data real da venda (padrão = hoje; em edição = data original)
+                // Seletor de data real da venda (padrão = hoje; personalizado quando ativado; em edição = data original)
                 VenderSaleDateSelectorCard(
                     selectedDate = form.selectedSaleDate,
+                    customSaleDateEnabled = form.saleDateCustomized,
                     isEditing = form.isEditing,
                     originalSaleEpochMs = form.originalEditingSale?.soldAtEpochMs,
-                    onOpenPicker = { saleDatePickerOpen = true },
+                    onCustomSaleDateToggled = { enabled ->
+                        if (!enabled) {
+                            saleDatePickerOpen = false
+                        }
+                        onCustomSaleDateToggled(enabled)
+                    },
+                    onOpenPicker = {
+                        if (canOpenSaleDateCalendar) {
+                            saleDatePickerOpen = true
+                        }
+                    },
                 )
 
                 // Seção 1 — Produtos vendidos
@@ -808,7 +830,7 @@ fun VenderScreen(
         )
     }
 
-    if (saleDatePickerOpen) {
+    if (saleDatePickerOpen && canOpenSaleDateCalendar) {
         val originalSaleDate = form.originalEditingSale?.let {
             DailySalesAggregator.toLocalDate(it.soldAtEpochMs, ZoneId.systemDefault())
         }
@@ -827,31 +849,87 @@ fun VenderScreen(
 @Composable
 private fun VenderSaleDateSelectorCard(
     selectedDate: LocalDate,
+    customSaleDateEnabled: Boolean,
     isEditing: Boolean,
     originalSaleEpochMs: Long?,
+    onCustomSaleDateToggled: (Boolean) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
     val zoneId = ZoneId.systemDefault()
     val today = LocalDate.now(zoneId)
+    val effectiveDate = if (!isEditing && !customSaleDateEnabled) today else selectedDate
     val originalDate = originalSaleEpochMs?.let { DailySalesAggregator.toLocalDate(it, zoneId) }
-    val formattedDate = CurrencyFormatter.formatLocalDate(selectedDate)
+    val formattedDate = CurrencyFormatter.formatLocalDate(effectiveDate)
+    val calendarAvailable = isEditing || customSaleDateEnabled
 
     val helperText = when {
-        isEditing && originalDate != null && selectedDate != originalDate ->
+        isEditing && originalDate != null && effectiveDate != originalDate ->
             "Data alterada · horário original (${CurrencyFormatter.formatTimeOfEpochMillis(originalSaleEpochMs)}) preservado"
         isEditing && originalSaleEpochMs != null ->
             "Data original da venda · horário ${CurrencyFormatter.formatTimeOfEpochMillis(originalSaleEpochMs)}"
-        selectedDate == today ->
-            "Hoje · salva com o horário atual"
-        selectedDate.isBefore(today) ->
+        !customSaleDateEnabled ->
+            "Data atual do aparelho · salva com o horário atual"
+        effectiveDate == today ->
+            "Data personalizada ativa (hoje) · escolha no calendário"
+        effectiveDate.isBefore(today) ->
             "Data anterior selecionada · salva com o horário atual"
         else ->
-            "Data selecionada · salva com o horário atual"
+            "Data personalizada selecionada · salva com o horário atual"
     }
 
     VenderGlassCard(
         modifier = Modifier.testTag("sale_date_card"),
     ) {
+        if (!isEditing) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onCustomSaleDateToggled(!customSaleDateEnabled) }
+                    .padding(vertical = 2.dp)
+                    .testTag("custom_sale_date_toggle_row"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.sell_use_custom_date_toggle),
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = if (customSaleDateEnabled) {
+                            "Ativado · toque em Alterar para escolher outra data"
+                        } else {
+                            "Desativado · utiliza automaticamente a data de hoje"
+                        },
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 12.sp,
+                        color = if (customSaleDateEnabled) V19PurpleSoftText else HomeCardLabelInk.copy(alpha = 0.85f),
+                    )
+                }
+                Switch(
+                    checked = customSaleDateEnabled,
+                    onCheckedChange = onCustomSaleDateToggled,
+                    colors = SwitchDefaults.colors(checkedTrackColor = V19PurplePrimary),
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("custom_sale_date_switch"),
+                )
+            }
+
+            HorizontalDivider(
+                color = HomeCardSubtleDivider.copy(alpha = 0.25f),
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -887,7 +965,7 @@ private fun VenderSaleDateSelectorCard(
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
-                    color = if (isEditing && originalDate != null && selectedDate != originalDate) {
+                    color = if (isEditing && originalDate != null && effectiveDate != originalDate) {
                         V19GoldAccent
                     } else {
                         HomeCardLabelInk.copy(alpha = 0.85f)
@@ -896,22 +974,24 @@ private fun VenderSaleDateSelectorCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            OutlinedButton(
-                onClick = onOpenPicker,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.1.dp, HomeCardNeonBorder.copy(alpha = 0.72f)),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .testTag("sale_date_selector_button"),
-            ) {
-                Text(
-                    text = stringResource(R.string.sell_date_change_action),
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = Color.White,
-                )
+            if (calendarAvailable) {
+                OutlinedButton(
+                    onClick = onOpenPicker,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.1.dp, HomeCardNeonBorder.copy(alpha = 0.72f)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("sale_date_selector_button"),
+                ) {
+                    Text(
+                        text = stringResource(R.string.sell_date_change_action),
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White,
+                    )
+                }
             }
         }
     }

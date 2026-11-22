@@ -148,6 +148,7 @@
     <string name="sales_delete_confirm_action">Excluir venda</string>
     <string name="sales_delete_in_progress">Excluindo...</string>
     <string name="sell_date_label">Data da venda</string>
+    <string name="sell_use_custom_date_toggle">Usar data personalizada</string>
     <string name="sell_date_change_action">Alterar</string>
     <string name="sell_date_picker_title">Selecionar data da venda</string>
     <string name="sell_date_picker_confirm">Confirmar</string>

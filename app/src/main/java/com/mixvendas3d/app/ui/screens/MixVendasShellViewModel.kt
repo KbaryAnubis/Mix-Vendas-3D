@@ -945,6 +945,30 @@ class MixVendasShellViewModel(
         }
     }
 
+    fun onCustomSaleDateToggled(enabled: Boolean) {
+        val current = venderFormFlow.value
+        val zoneId = ZoneId.systemDefault()
+        val today = LocalDate.now(zoneId)
+        if (current.isEditing) {
+            val originalDate = current.originalEditingSale?.let {
+                DailySalesAggregator.toLocalDate(it.soldAtEpochMs, zoneId)
+            } ?: today
+            venderFormFlow.value = current.copy(
+                saleDateCustomized = enabled,
+                selectedSaleDate = if (enabled) current.selectedSaleDate else originalDate,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            )
+        } else {
+            venderFormFlow.value = current.copy(
+                saleDateCustomized = enabled,
+                selectedSaleDate = today,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            )
+        }
+    }
+
     fun onSaleDateSelected(date: LocalDate) {
         val current = venderFormFlow.value
         val originalDate = current.originalEditingSale?.let {
