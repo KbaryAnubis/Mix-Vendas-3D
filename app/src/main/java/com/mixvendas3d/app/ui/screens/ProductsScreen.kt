@@ -1330,12 +1330,13 @@ private fun CategoryManagementScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                 ) {
-                                    ProductsSecondaryOutlinedButton(
+                                    ProductsPrimaryCtaButton(
                                         text = "Subcategoria",
+                                        enabled = true,
                                         onClick = { onOpenNewSubcategory(mainCat.id) },
                                         testTag = "add_subcategory_button_${mainCat.id}",
                                         iconRes = R.drawable.mv3d_subcategoria,
-                                        iconSize = 34.dp,
+                                        iconSize = 42.dp,
                                         iconTestTag = "icon_mv3d_subcategoria_${mainCat.id}",
                                     )
                                 }
