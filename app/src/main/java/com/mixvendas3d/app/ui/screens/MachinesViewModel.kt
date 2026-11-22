@@ -14,13 +14,13 @@ import com.mixvendas3d.app.domain.models.InstallmentTiers
 import com.mixvendas3d.app.domain.models.Machine
 import com.mixvendas3d.app.util.RateFormatter
 import com.mixvendas3d.app.util.TextNormalization
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -111,20 +111,26 @@ class MachinesViewModel(
     private val creditToggleMutex = Mutex()
     private var baselineEditorSnapshot: MachineEditorUiState? = null
 
-    val uiState: StateFlow<MachinesUiState> = combine(
+    private val filteredMachinesFlow = combine(
         machineRepository.observeMachines().onStart { emit(emptyList()) },
+        formFlow.map { it.searchQuery }.distinctUntilChanged(),
+    ) { machines, searchQuery ->
+        machines to MachinesUiState.computeFilteredMachines(machines, searchQuery)
+    }
+
+    val uiState: StateFlow<MachinesUiState> = combine(
+        filteredMachinesFlow,
         formFlow,
-    ) { machines, form ->
+    ) { (machines, filteredMachines), form ->
         MachinesUiState(
             machines = machines,
             searchQuery = form.searchQuery,
             feedbackMessage = form.feedbackMessage,
             errorMessage = form.errorMessage,
             editor = form.editor,
-            precomputedFilteredMachines = MachinesUiState.computeFilteredMachines(machines, form.searchQuery),
+            precomputedFilteredMachines = filteredMachines,
         )
     }
-        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),

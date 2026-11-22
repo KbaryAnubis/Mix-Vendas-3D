@@ -354,7 +354,7 @@ class MixVendasShellViewModel(
             salesAction = SalesActionState(),
             closingCsvExport = ClosingCsvExportUiState(),
         )
-    }.flowOn(Dispatchers.Default)
+    }
 
     val uiState: StateFlow<MixVendasShellUiState> = combine(
         aggregatedBaseStateFlow,
@@ -371,7 +371,6 @@ class MixVendasShellViewModel(
             venderForm = syncedForm,
         )
     }
-        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),

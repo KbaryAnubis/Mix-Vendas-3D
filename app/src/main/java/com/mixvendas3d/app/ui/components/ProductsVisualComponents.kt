@@ -504,14 +504,14 @@ fun ProductsDropdownField(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ProductsFieldLabel(text = label)
         Box {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 50.dp)
+                    .heightIn(min = 56.dp)
                     .clickable(enabled = enabled) {
                         focusManager.clearFocus(force = true)
                         keyboardController?.hide()
@@ -519,11 +519,14 @@ fun ProductsDropdownField(
                     }
                     .testTag(testTag),
                 shape = RoundedCornerShape(16.dp),
-                color = GlassInnerBoxBg,
-                border = BorderStroke(1.dp, if (enabled) GlassNeonBorder15 else GlassNeonBorder15.copy(alpha = 0.3f)),
+                color = if (enabled) GlassInnerBoxBg else GlassInnerBoxBg.copy(alpha = 0.58f),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (enabled) GlassNeonBorder15 else GlassNeonBorder15.copy(alpha = 0.35f),
+                ),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -540,8 +543,8 @@ fun ProductsDropdownField(
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
                         contentDescription = null,
-                        tint = if (enabled) V19PurpleSoftText else V19InkMuted,
-                        modifier = Modifier.size(18.dp),
+                        tint = if (enabled) V19PurpleSoftText else V19InkMuted.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }

@@ -16,12 +16,12 @@ import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.util.CurrencyFormatter
 import com.mixvendas3d.app.util.MonetaryInputMask
 import com.mixvendas3d.app.util.TextNormalization
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -117,13 +117,30 @@ class CatalogViewModel(
     private val namesFormFlow = MutableStateFlow(NamesFormState())
     private val productsFormFlow = MutableStateFlow(ProductsFormState())
 
+    private val productsSourceFlow = catalogRepository.observeAllProducts().onStart { emit(emptyList()) }
+
+    private val filteredProductsFlow = combine(
+        productsSourceFlow,
+        productsFormFlow
+            .map { it.searchQuery to it.showOnlyActive }
+            .distinctUntilChanged(),
+    ) { products, (searchQuery, showOnlyActive) ->
+        products to CatalogUiState.computeFilteredProducts(
+            ProductsSectionUiState(
+                products = products,
+                searchQuery = searchQuery,
+                showOnlyActive = showOnlyActive,
+            ),
+        )
+    }
+
     val uiState: StateFlow<CatalogUiState> = combine(
         catalogRepository.observePeopleWithUsage().onStart { emit(emptyList()) },
-        catalogRepository.observeAllProducts().onStart { emit(emptyList()) },
+        filteredProductsFlow,
         catalogRepository.observeProductCategories().onStart { emit(emptyList()) },
         namesFormFlow,
         productsFormFlow,
-    ) { people, products, categories, namesForm, productsForm ->
+    ) { people, (products, filteredProducts), categories, namesForm, productsForm ->
         val validSelectedCategoryFilterId = when (val filterId = productsForm.selectedCategoryFilterId) {
             null, "uncategorized" -> filterId
             else -> if (categories.any { it.id == filterId }) filterId else null
@@ -151,10 +168,9 @@ class CatalogViewModel(
                 isSaving = namesForm.isSaving,
             ),
             products = productsSection,
-            precomputedFilteredProducts = CatalogUiState.computeFilteredProducts(productsSection),
+            precomputedFilteredProducts = filteredProducts,
         )
     }
-        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),

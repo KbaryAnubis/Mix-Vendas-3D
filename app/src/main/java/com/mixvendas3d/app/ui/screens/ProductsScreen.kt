@@ -327,11 +327,40 @@ private fun ProductsMainContent(
     val categoriesById = remember(productsState.categories) {
         productsState.categories.associateBy { it.id }
     }
-    val categoryFilteredProducts = remember(filteredProducts, selectedCategoryFilterId, productsState.categories, categoriesById) {
+    var selectedSubcategoryFilterId by rememberSaveable(selectedCategoryFilterId) {
+        mutableStateOf<String?>(null)
+    }
+    val selectedMainFilterCategory = remember(selectedCategoryFilterId, categoriesById) {
+        selectedCategoryFilterId
+            ?.takeIf { it != "uncategorized" }
+            ?.let { categoriesById[it] }
+            ?.takeIf { it.parentId == null }
+    }
+    val filterSubcategories = remember(productsState.categories, selectedMainFilterCategory) {
+        if (selectedMainFilterCategory == null) {
+            emptyList()
+        } else {
+            productsState.categories
+                .filter { it.parentId == selectedMainFilterCategory.id }
+                .sortedBy { it.name }
+        }
+    }
+    val effectiveSubcategoryFilterId = selectedSubcategoryFilterId?.takeIf { subId ->
+        filterSubcategories.any { it.id == subId }
+    }
+    val categoryFilteredProducts = remember(
+        filteredProducts,
+        selectedCategoryFilterId,
+        effectiveSubcategoryFilterId,
+        productsState.categories,
+        categoriesById,
+    ) {
         if (selectedCategoryFilterId == null) {
             filteredProducts
         } else if (selectedCategoryFilterId == "uncategorized") {
             filteredProducts.filter { it.categoryId == null }
+        } else if (effectiveSubcategoryFilterId != null) {
+            filteredProducts.filter { it.subcategoryId == effectiveSubcategoryFilterId }
         } else {
             val selectedCat = categoriesById[selectedCategoryFilterId]
             if (selectedCat != null && selectedCat.parentId == null) {
@@ -491,7 +520,7 @@ private fun ProductsMainContent(
                     }
 
                     if (productsState.categories.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         val filterOptions = listOf(
                             null to "Todas as categorias",
                             "uncategorized" to "Sem categoria",
@@ -507,8 +536,32 @@ private fun ProductsMainContent(
                             label = "Filtrar por Categoria",
                             selectedText = currentFilterName,
                             options = filterOptions,
-                            onOptionSelected = onCategoryFilterSelected,
+                            onOptionSelected = { newCatId ->
+                                selectedSubcategoryFilterId = null
+                                onCategoryFilterSelected(newCatId)
+                            },
                             testTag = "products_category_filter",
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val subFilterEnabled = selectedMainFilterCategory != null && filterSubcategories.isNotEmpty()
+                        val subFilterSelectedName = when {
+                            selectedMainFilterCategory == null -> "Selecione uma categoria primeiro"
+                            filterSubcategories.isEmpty() -> "Sem subcategorias cadastradas"
+                            else -> filterSubcategories.firstOrNull { it.id == effectiveSubcategoryFilterId }?.name
+                                ?: "Todas as subcategorias"
+                        }
+                        val subFilterOptions = listOf(null to "Todas as subcategorias") +
+                            filterSubcategories.map { it.id to it.name }
+
+                        ProductsDropdownField(
+                            label = "Filtrar por Subcategoria",
+                            selectedText = subFilterSelectedName,
+                            options = subFilterOptions,
+                            onOptionSelected = { selectedSubcategoryFilterId = it },
+                            testTag = "products_subcategory_filter",
+                            enabled = subFilterEnabled,
                         )
                     }
 
@@ -654,50 +707,52 @@ private fun ProductEditorScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(
+                        ProductsFieldLabel(text = stringResource(R.string.products_price_label))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ProductsMonetaryTextField(
+                            maskedValue = editor.priceInput,
+                            onMaskedInputChanged = onPriceChanged,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("product_price_input"),
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
+                        val selectedMainCat = mainCategories.firstOrNull { it.id == editor.categoryId }
+                        val categoryOptions = listOf(null to "Nenhuma") + mainCategories.map { it.id to it.name }
+
+                        ProductsDropdownField(
+                            label = "Categoria principal",
+                            selectedText = selectedMainCat?.name ?: "Nenhuma",
+                            options = categoryOptions,
+                            onOptionSelected = onCategoryChanged,
+                            testTag = "product_category_dropdown",
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                ProductsFieldLabel(text = stringResource(R.string.products_price_label))
-                                Spacer(modifier = Modifier.height(8.dp))
-                                ProductsMonetaryTextField(
-                                    maskedValue = editor.priceInput,
-                                    onMaskedInputChanged = onPriceChanged,
-                                    textAlign = TextAlign.Start,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("product_price_input"),
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
-                                val selectedMainCat = mainCategories.firstOrNull { it.id == editor.categoryId }
-                                val categoryOptions = listOf(null to "Nenhuma") + mainCategories.map { it.id to it.name }
+                        )
 
-                                ProductsDropdownField(
-                                    label = "Categoria principal",
-                                    selectedText = selectedMainCat?.name ?: "Nenhuma",
-                                    options = categoryOptions,
-                                    onOptionSelected = onCategoryChanged,
-                                    testTag = "product_category_dropdown",
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         val subcategories = categories.filter { editor.categoryId != null && it.parentId == editor.categoryId }.sortedBy { it.name }
                         val selectedSubCat = subcategories.firstOrNull { it.id == editor.subcategoryId }
                         val subcategoryOptions = listOf(null to "Nenhuma") + subcategories.map { it.id to it.name }
+                        val subcategoryEnabled = editor.categoryId != null && subcategories.isNotEmpty()
+                        val subcategorySelectedText = when {
+                            editor.categoryId == null -> "Selecione uma categoria primeiro"
+                            subcategories.isEmpty() -> "Sem subcategorias cadastradas"
+                            else -> selectedSubCat?.name ?: "Nenhuma"
+                        }
 
                         ProductsDropdownField(
                             label = "Subcategoria (opcional)",
-                            selectedText = selectedSubCat?.name ?: "Nenhuma",
+                            selectedText = subcategorySelectedText,
                             options = subcategoryOptions,
                             onOptionSelected = onSubcategoryChanged,
                             testTag = "product_subcategory_dropdown",
-                            enabled = editor.categoryId != null,
+                            enabled = subcategoryEnabled,
+                            modifier = Modifier.fillMaxWidth(),
                         )
 
                         Spacer(modifier = Modifier.height(20.dp))
@@ -1087,7 +1142,7 @@ private fun CategoryManagementScreen(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         ProductsPrimaryCtaButton(
-                            text = "+ Nova categoria",
+                            text = "Nova categoria",
                             enabled = true,
                             onClick = onOpenNewCategory,
                             testTag = "new_category_button",
@@ -1125,7 +1180,7 @@ private fun CategoryManagementScreen(
                     ) {
                         ProductsGlassCard {
                             Text(
-                                text = "Nenhuma categoria cadastrada ainda. Toque em \"+ Nova categoria\" acima para começar.",
+                                text = "Nenhuma categoria cadastrada ainda. Toque em \"Nova categoria\" acima para começar.",
                                 fontFamily = PlusJakartaSansFontFamily,
                                 fontSize = 14.sp,
                                 color = V19InkMuted,
@@ -1276,7 +1331,7 @@ private fun CategoryManagementScreen(
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                 ) {
                                     ProductsSecondaryOutlinedButton(
-                                        text = "+ Subcategoria",
+                                        text = "Subcategoria",
                                         onClick = { onOpenNewSubcategory(mainCat.id) },
                                         testTag = "add_subcategory_button_${mainCat.id}",
                                         iconRes = R.drawable.mv3d_subcategoria,
