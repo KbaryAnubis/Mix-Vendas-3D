@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.sp
 import com.mixvendas3d.app.R
 import com.mixvendas3d.app.domain.models.PreviewPeriodFilter
 import com.mixvendas3d.app.ui.components.FechamentoDailySalesCard
-import com.mixvendas3d.app.ui.components.FechamentoDailySalesCard
 import com.mixvendas3d.app.ui.components.FechamentoExportCsvButton
 import com.mixvendas3d.app.ui.components.FechamentoHeroSummaryCard
 import com.mixvendas3d.app.ui.components.FechamentoIndividualConferenceCard
@@ -191,12 +190,6 @@ fun FechamentoScreen(
                     emptyMessage = emptyMessage,
                     expanded = machinesExpanded,
                     onToggleExpanded = { machinesExpanded = !machinesExpanded },
-                )
-
-                // Resumo por dia e agrupamento mensal pela data real da venda (sold_at_epoch_ms)
-                FechamentoDailySalesCard(
-                    report = uiState.closingDailyReport,
-                    emptyMessage = emptyMessage,
                 )
 
                 // Resumo por dia e agrupamento mensal pela data real da venda (sold_at_epoch_ms)

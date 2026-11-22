@@ -739,10 +739,10 @@ class RealSaleDateTest {
         composeRule.onNodeWithTag("sale_date_quick_today").performClick()
         waitForTagGone("sale_date_picker_dialog")
 
-        composeRule.onNodeWithTag("cancel_edit_button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
         waitForTag("discard_edit_dialog")
         composeRule.onNodeWithTag("discard_edit_confirm_button").performClick()
-        waitForTagGone("vender_editing_banner")
+        waitForTag("screen_vendas")
 
         // Verifica que o banco manteve intacta a data original (ontem)
         val untouched = runBlocking(Dispatchers.IO) { app.saleRepository.getSaleById(savedId) }

@@ -635,6 +635,7 @@ fun VendasSaleHeroCard(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .semantics(mergeDescendants = true) {}
                             .testTag("sale_receipt_summary_${sale.id}"),
                         shape = RoundedCornerShape(14.dp),
                         color = GlassInnerBoxBg,

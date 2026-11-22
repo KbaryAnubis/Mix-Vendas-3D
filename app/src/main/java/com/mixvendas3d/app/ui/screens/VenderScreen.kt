@@ -88,7 +88,6 @@ import com.mixvendas3d.app.domain.models.PreviewPaymentMethod
 import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
-import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
 import com.mixvendas3d.app.ui.components.PickerCategoryHeader
 import com.mixvendas3d.app.ui.components.PickerSubcategoryHeader
 import com.mixvendas3d.app.ui.components.Mv3dIcon
