@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
@@ -124,7 +126,7 @@ class StageV23ProductsUiTest {
         }
 
         val savedProduct = runBlocking(Dispatchers.IO) {
-            app.catalogRepository.observeAllProducts().first().first { it.name == "Pastel de queijo" }
+            app.catalogRepository.observeAllProducts().first().first { it.name == "PASTEL DE QUEIJO" }
         }
         assertEquals(2_200L, savedProduct.price.rawCents)
         assertEquals(1_500L, savedProduct.participants.first { it.personId == anaId }.amount.rawCents)
@@ -134,14 +136,17 @@ class StageV23ProductsUiTest {
         assertEquals(true, savedProduct.active)
 
         // A listagem indica o status, mas não oferece uma ação interativa para alterá-lo.
-        composeRule.onNodeWithTag("product_card_${savedProduct.id}").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("product_card_${savedProduct.id}"))
+        composeRule.onNodeWithTag("product_card_${savedProduct.id}").assertIsDisplayed()
         composeRule.onNodeWithTag("product_status_${savedProduct.id}")
-            .performScrollTo()
             .assert(hasText("Ativo", substring = true))
         composeRule.onAllNodesWithTag("toggle_product_active_${savedProduct.id}").assertCountEquals(0)
 
         // O status é alterado dentro do formulário e salvo junto com o produto.
-        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("edit_product_${savedProduct.id}"))
+        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_editor_dialog").assertIsDisplayed()
         composeRule.onNodeWithText("Produto ativo para novas vendas").performScrollTo().assertIsDisplayed()
@@ -156,21 +161,28 @@ class StageV23ProductsUiTest {
                         app.catalogRepository.observeActiveProducts().first().isEmpty()
                 }
         }
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("product_status_${savedProduct.id}"))
         composeRule.onNodeWithTag("product_status_${savedProduct.id}")
-            .performScrollTo()
             .assert(hasText("Inativo", substring = true))
 
         // Reabre a edição para confirmar persistência do status desligado; depois cancela.
-        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("edit_product_${savedProduct.id}"))
+        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_active_switch").assertIsOff()
         composeRule.onNodeWithTag("cancel_product_button").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onAllNodesWithTag("product_editor_dialog").assertCountEquals(0)
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("product_card_${savedProduct.id}"))
         composeRule.onNodeWithTag("product_card_${savedProduct.id}").assertExists()
 
         // Reativa no editor e confirma que volta ao catálogo disponível para vendas
-        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("edit_product_${savedProduct.id}"))
+        composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performClick()
         composeRule.onNodeWithTag("product_active_switch").performScrollTo().performClick()
         composeRule.onNodeWithTag("save_product_button").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
@@ -185,7 +197,9 @@ class StageV23ProductsUiTest {
         }
 
         // CANCELAR preserva; EXCLUIR remove de fato um produto sem vendas vinculadas
-        composeRule.onNodeWithTag("delete_product_${savedProduct.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("delete_product_${savedProduct.id}"))
+        composeRule.onNodeWithTag("delete_product_${savedProduct.id}").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             composeRule.onAllNodesWithTag("confirm_delete_product").fetchSemanticsNodes().isNotEmpty()
@@ -194,7 +208,9 @@ class StageV23ProductsUiTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_card_${savedProduct.id}").assertExists()
 
-        composeRule.onNodeWithTag("delete_product_${savedProduct.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("delete_product_${savedProduct.id}"))
+        composeRule.onNodeWithTag("delete_product_${savedProduct.id}").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             composeRule.onAllNodesWithTag("confirm_delete_product").fetchSemanticsNodes().isNotEmpty()

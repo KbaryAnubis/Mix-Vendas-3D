@@ -271,7 +271,7 @@ class StageF2bCustomBrandsIntegrationTest {
         composeRule.onNodeWithTag("add_custom_brand_button").performScrollTo().performClick()
         composeRule.waitForIdle()
 
-        val credzKey = CustomBrandKeyCodec.encodeKey("Crédz: VIP")
+        val credzKey = CustomBrandKeyCodec.encodeKey("CRÉDZ: VIP")
         composeRule.onNodeWithTag("custom_brand_row_$credzKey").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("custom_brand_credit_rate_$credzKey").performScrollTo().assert(hasText("4,25"))
 
@@ -287,7 +287,7 @@ class StageF2bCustomBrandsIntegrationTest {
         composeRule.onNodeWithTag("new_custom_brand_credit_rate_input").performScrollTo().performTextReplacement("5,10")
         composeRule.onNodeWithTag("add_custom_brand_button").performScrollTo().performClick()
         composeRule.waitForIdle()
-        val valeKey = CustomBrandKeyCodec.encodeKey("Vale Loja")
+        val valeKey = CustomBrandKeyCodec.encodeKey("VALE LOJA")
 
         // Recolher e desativar/reativar bandeiras preserva rascunhos de personalizadas
         composeRule.onNodeWithTag("machine_editor_scroll")
@@ -317,19 +317,27 @@ class StageF2bCustomBrandsIntegrationTest {
         assertEquals(2, savedMachine.customBrandRates.size)
         assertEquals(425, savedMachine.findCustomBrand(credzKey)?.rateBps)
         assertEquals(510, savedMachine.findCustomBrand(valeKey)?.rateBps)
-        assertEquals("Crédz: VIP", savedMachine.findCustomBrand(credzKey)?.name)
+        assertEquals("CRÉDZ: VIP", savedMachine.findCustomBrand(credzKey)?.name)
 
         // Card da listagem exibe a contagem e os detalhes das personalizadas
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_card_${savedMachine.id}")
             .performScrollTo()
             .assert(hasAnyDescendant(hasText("2 personalizada(s)", substring = true)))
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("toggle_machine_rates_${savedMachine.id}"))
         composeRule.onNodeWithTag("toggle_machine_rates_${savedMachine.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_card_${savedMachine.id}")
             .performScrollTo()
-            .assert(hasAnyDescendant(hasText("Crédz: VIP (personalizada) 4,25%", substring = true)))
+            .assert(hasAnyDescendant(hasText("CRÉDZ: VIP (personalizada) 4,25%", substring = true)))
 
-        // Edita taxa de Crédz: VIP e remove Vale Loja pela UI
+        // Edita taxa de CRÉDZ: VIP e remove VALE LOJA pela UI
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("edit_machine_${savedMachine.id}"))
         composeRule.onNodeWithTag("edit_machine_${savedMachine.id}").performScrollTo().performClick()
         waitUiUntil {
             composeRule.onAllNodesWithTag("machine_editor_dialog").fetchSemanticsNodes().isNotEmpty()

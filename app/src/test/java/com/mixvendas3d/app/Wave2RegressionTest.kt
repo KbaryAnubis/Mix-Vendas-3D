@@ -221,7 +221,7 @@ class Wave2RegressionTest {
         composeRule.onNodeWithTag("save_category_button").performScrollTo().performClick()
         waitForTag("category_form_error")
         composeRule.onNodeWithTag("create_edit_category_dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("category_name_input").assert(hasText("Impressão 3D"))
+        composeRule.onNodeWithTag("category_name_input").assert(hasText("IMPRESSÃO 3D"))
 
         // 2. Corrige nome e cria nova categoria principal com sucesso -> fecha editor e exibe sucesso
         composeRule.onNodeWithTag("category_name_input").performScrollTo().performTextReplacement("Decoração")
@@ -244,7 +244,7 @@ class Wave2RegressionTest {
         val renamedSub = runBlocking(Dispatchers.IO) {
             app.catalogRepository.observeProductCategories().first().first { it.id == subId }
         }
-        assertEquals("Miniaturas RPG", renamedSub.name)
+        assertEquals("MINIATURAS RPG", renamedSub.name)
         assertEquals(catId, renamedSub.parentId)
 
         // 4. Exclui a categoria principal que estava selecionada no filtro -> volta para Produtos com filtro resetado
@@ -555,9 +555,9 @@ class Wave2RegressionTest {
         waitForTagGone("machine_editor_dialog")
 
         val savedMachine = runBlocking(Dispatchers.IO) {
-            app.machineRepository.observeMachines().first().first { it.name == "Infinite Dual" }
+            app.machineRepository.observeMachines().first().first { it.name == "INFINITE DUAL" }
         }
-        val baneseKey = CustomBrandKeyCodec.encodeKey("Banese VIP")
+        val baneseKey = CustomBrandKeyCodec.encodeKey("BANESE VIP")
         assertEquals(140, savedMachine.brandDebitRatesBps[CardBrand.VISA])
         assertEquals(280, savedMachine.brandRatesBps[CardBrand.VISA])
         assertEquals(155, savedMachine.brandDebitRatesBps[CardBrand.MASTERCARD])
@@ -601,13 +601,19 @@ class Wave2RegressionTest {
         assertEquals(190, eloDebitFallback.effectiveFeeRateBps)
 
         // Card expandido exibe Bandeiras (Débito) e Bandeiras (Crédito) separadamente
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("toggle_machine_rates_${savedMachine.id}"))
         composeRule.onNodeWithTag("toggle_machine_rates_${savedMachine.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_debit_brands_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_card_debit_brands_${savedMachine.id}")
             .performScrollTo()
             .assert(hasText("Visa 1,40%", substring = true))
             .assert(hasText("Mastercard 1,55%", substring = true))
             .assert(hasText("Elo (padrão)", substring = true))
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_credit_brands_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_card_credit_brands_${savedMachine.id}")
             .performScrollTo()
             .assert(hasText("Visa 2,80%", substring = true))
@@ -615,6 +621,8 @@ class Wave2RegressionTest {
             .assert(hasText("Elo 3,15%", substring = true))
 
         // Desativa crédito no card -> Bandeiras (Débito) continua visível ao expandir
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_credit_switch_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_credit_switch_${savedMachine.id}").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -622,11 +630,15 @@ class Wave2RegressionTest {
                 !app.machineRepository.observeMachines().first().first { it.id == savedMachine.id }.creditEnabled
             }
         }
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_debit_brands_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_card_debit_brands_${savedMachine.id}")
             .performScrollTo()
             .assert(hasText("Visa 1,40%", substring = true))
 
         // Reativa crédito, reabre edição, altera apenas Débito do Visa e verifica preservação de Crédito do Visa e demais taxas
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_credit_switch_${savedMachine.id}"))
         composeRule.onNodeWithTag("machine_credit_switch_${savedMachine.id}").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -634,6 +646,8 @@ class Wave2RegressionTest {
                 app.machineRepository.observeMachines().first().first { it.id == savedMachine.id }.creditEnabled
             }
         }
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("edit_machine_${savedMachine.id}"))
         composeRule.onNodeWithTag("edit_machine_${savedMachine.id}").performScrollTo().performClick()
         waitForTag("machine_editor_dialog")
         composeRule.onNodeWithTag("machine_editor_scroll")
@@ -730,8 +744,9 @@ class Wave2RegressionTest {
                 assertEquals(155, restored.brandDebitRatesBps[CardBrand.MASTERCARD])
                 assertNull(restored.brandRatesBps[CardBrand.MASTERCARD])
                 assertEquals(315, restored.brandRatesBps[CardBrand.ELO])
-                assertEquals(175, restored.findCustomBrand(baneseKey)?.debitRateBps)
-                assertEquals(410, restored.findCustomBrand(baneseKey)?.creditRateBps)
+                val baneseRepoKey = CustomBrandKeyCodec.encodeKey("Banese VIP")
+                assertEquals(175, restored.findCustomBrand(baneseRepoKey)?.debitRateBps)
+                assertEquals(410, restored.findCustomBrand(baneseRepoKey)?.creditRateBps)
             } finally {
                 reopenedDb.close()
                 restoreDb.close()
@@ -769,7 +784,7 @@ class Wave2RegressionTest {
         composeRule.onNodeWithTag("add_custom_brand_button").performClick()
         composeRule.waitForIdle()
 
-        val aleloKey = CustomBrandKeyCodec.encodeKey("Alelo Refeição Compacta")
+        val aleloKey = CustomBrandKeyCodec.encodeKey("ALELO REFEIÇÃO COMPACTA")
         composeRule.onNodeWithTag("machine_editor_scroll")
             .performScrollToNode(hasTestTag("remove_custom_brand_$aleloKey"))
         composeRule.onNodeWithTag("remove_custom_brand_$aleloKey")

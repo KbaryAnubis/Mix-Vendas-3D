@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -60,7 +61,7 @@ class Stage2B1UiIntegrationTest {
         composeRule.onNodeWithTag("save_person_button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("\"Lucas\" adicionada com sucesso.")
+            composeRule.onAllNodesWithText("\"LUCAS\" adicionada com sucesso.")
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -68,7 +69,7 @@ class Stage2B1UiIntegrationTest {
         composeRule.onNodeWithTag("save_person_button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("\"Beatriz\" adicionada com sucesso.")
+            composeRule.onAllNodesWithText("\"BEATRIZ\" adicionada com sucesso.")
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -76,7 +77,7 @@ class Stage2B1UiIntegrationTest {
         composeRule.onNodeWithTag("save_person_button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("\"Terceiro\" adicionada com sucesso.")
+            composeRule.onAllNodesWithText("\"TERCEIRO\" adicionada com sucesso.")
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -85,14 +86,14 @@ class Stage2B1UiIntegrationTest {
         composeRule.onNodeWithTag("save_person_button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("Já existe uma pessoa cadastrada com o nome \"Lucas\".")
+            composeRule.onAllNodesWithText("Já existe uma pessoa cadastrada com o nome \"LUCAS\".")
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
         val people = runBlocking(Dispatchers.IO) { app.catalogRepository.observePeople().first() }
         assertEquals(3, people.size)
-        val lucas = people.first { it.name == "Lucas" }
-        val beatriz = people.first { it.name == "Beatriz" }
+        val lucas = people.first { it.name == "LUCAS" }
+        val beatriz = people.first { it.name == "BEATRIZ" }
 
         // 2. Voltar para Mais -> Tipos / produtos e cadastrar Produto A (Exemplo 1: R$ 22,00 = 17,00 + 5,00)
         composeRule.onNodeWithTag("topbar_back_button").performClick()
@@ -122,7 +123,7 @@ class Stage2B1UiIntegrationTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_participant_amount_${beatriz.id}")
             .performScrollTo()
-            .performTextInput("5,00")
+            .performTextReplacement("5,00")
 
         composeRule.onNodeWithTag("fee_mode_individual")
             .performScrollTo()
@@ -140,7 +141,7 @@ class Stage2B1UiIntegrationTest {
             .performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_fee_owner_dropdown")
-            .assert(hasText("Lucas", substring = true))
+            .assert(hasText("LUCAS", substring = true))
 
         composeRule.onNodeWithTag("save_product_button")
             .performScrollTo()
@@ -161,26 +162,30 @@ class Stage2B1UiIntegrationTest {
         composeRule.onNodeWithTag("mais_item_names").performScrollTo().performClick()
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("delete_person_${lucas.id}"))
         composeRule.onNodeWithTag("delete_person_${lucas.id}")
-            .performScrollTo()
             .performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             composeRule.onAllNodesWithText(
-                "Não é possível excluir \"Lucas\" porque ela está vinculada a produto(s) existente(s).",
+                "Não é possível excluir \"LUCAS\" porque ela está vinculada a produto(s) existente(s).",
             ).fetchSemanticsNodes().isNotEmpty()
         }
 
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("edit_person_${lucas.id}"))
         composeRule.onNodeWithTag("edit_person_${lucas.id}")
-            .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("person_name_input"))
         composeRule.onNodeWithTag("person_name_input").performScrollTo().performTextClearance()
         composeRule.onNodeWithTag("person_name_input").performTextInput("Lucas Atualizado")
         composeRule.onNodeWithTag("save_person_button").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("Nome atualizado para \"Lucas Atualizado\".")
+            composeRule.onAllNodesWithText("Nome atualizado para \"LUCAS ATUALIZADO\".")
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -192,21 +197,21 @@ class Stage2B1UiIntegrationTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithText("Produto Exemplo A").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("PRODUTO EXEMPLO A").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Produto Exemplo A").assertIsDisplayed()
+        composeRule.onNodeWithText("PRODUTO EXEMPLO A").assertIsDisplayed()
         composeRule.onAllNodesWithText("Impressão 3D Miniatura").assertCountEquals(0)
 
         val products = runBlocking(Dispatchers.IO) { app.catalogRepository.observeActiveProducts().first() }
         assertEquals(1, products.size)
         val prodId = products.first().id
-        assertEquals("Lucas Atualizado", products.first().participants.first().personName)
+        assertEquals("LUCAS ATUALIZADO", products.first().participants.first().personName)
 
         composeRule.onNodeWithTag("picker_checkbox_$prodId").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("close_product_picker_button").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("1× Produto Exemplo A").assertExists()
+        composeRule.onNodeWithText("1× PRODUTO EXEMPLO A").assertExists()
     }
 
     @Test
@@ -252,15 +257,23 @@ class Stage2B1UiIntegrationTest {
             app.catalogRepository.observePeople().first().single().id
         }
 
-        composeRule.onNodeWithTag("person_row_$createdId").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("edit_person_$createdId").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("person_row_$createdId"))
+        composeRule.onNodeWithTag("person_row_$createdId").assertIsDisplayed()
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("edit_person_$createdId"))
+        composeRule.onNodeWithTag("edit_person_$createdId").performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("cancel_person_edit_button"))
         composeRule.onAllNodesWithText("Salvar nome").assertCountEquals(1)
         composeRule.onNodeWithTag("cancel_person_edit_button").performScrollTo().assertIsDisplayed().performClick()
         composeRule.waitForIdle()
         composeRule.onAllNodesWithText("Adicionar pessoa").assertCountEquals(1)
 
-        composeRule.onNodeWithTag("delete_person_$createdId").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("delete_person_$createdId"))
+        composeRule.onNodeWithTag("delete_person_$createdId").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("cancel_delete_person_button").assertIsDisplayed()
         composeRule.onNodeWithTag("confirm_delete_person_button").performClick()
@@ -268,6 +281,8 @@ class Stage2B1UiIntegrationTest {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             composeRule.onAllNodesWithTag("person_row_$createdId").fetchSemanticsNodes().isEmpty()
         }
+        composeRule.onNodeWithTag("screen_names")
+            .performScrollToNode(hasTestTag("names_empty_state"))
         composeRule.onNodeWithTag("names_empty_state").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("topbar_back_button").performClick()

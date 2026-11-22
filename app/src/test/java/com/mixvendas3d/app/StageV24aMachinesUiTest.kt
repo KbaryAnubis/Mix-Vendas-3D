@@ -91,12 +91,17 @@ class StageV24aMachinesUiTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithTag("machine_card_${existingMachine.id}")
-                .fetchSemanticsNodes().isNotEmpty()
+            runCatching {
+                composeRule.onNodeWithTag("machines_list_lazy")
+                    .performScrollToNode(hasTestTag("machine_card_${existingMachine.id}"))
+                true
+            }.getOrDefault(false)
         }
 
         // 2. Abertura do formulário vazio pela ação Cadastrar + recolher/expandir e preservação de flags
-        composeRule.onNodeWithTag("new_machine_button").performClick()
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("new_machine_button"))
+        composeRule.onNodeWithTag("new_machine_button").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_editor_dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("machine_name_input").assert(hasText(""))
@@ -114,7 +119,7 @@ class StageV24aMachinesUiTest {
         composeRule.onNodeWithTag("add_custom_brand_button").performClick()
         composeRule.waitForIdle()
 
-        val visaCustomKey = CustomBrandKeyCodec.encodeKey("Visa Custom")
+        val visaCustomKey = CustomBrandKeyCodec.encodeKey("VISA CUSTOM")
         composeRule.onNodeWithTag("machine_editor_scroll")
             .performScrollToNode(hasTestTag("custom_brand_credit_rate_$visaCustomKey"))
         composeRule.onNodeWithTag("custom_brand_credit_rate_$visaCustomKey").assert(hasText("2,95"))
@@ -193,13 +198,17 @@ class StageV24aMachinesUiTest {
         composeRule.onNodeWithTag("confirm_discard_machine_button").performClick()
         composeRule.waitForIdle()
         composeRule.onAllNodesWithTag("machine_editor_dialog").assertCountEquals(0)
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${existingMachine.id}"))
         composeRule.onNodeWithTag("machine_card_${existingMachine.id}").assertExists()
 
         // 6. Edição carregando dados existentes + cancelamento mantendo listagem e banco intactos
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("edit_machine_${existingMachine.id}"))
         composeRule.onNodeWithTag("edit_machine_${existingMachine.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_editor_dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("machine_name_input").assert(hasText("Stone Pro"))
+        composeRule.onNodeWithTag("machine_name_input").assert(hasText("STONE PRO"))
         composeRule.onNodeWithTag("machine_name_input").performTextReplacement("Stone Alterada")
         composeRule.onNodeWithTag("machine_editor_scroll")
             .performScrollToNode(hasTestTag("cancel_machine_editor_button"))
@@ -246,14 +255,19 @@ class StageV24aMachinesUiTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
-            composeRule.onAllNodesWithTag("machine_card_${legacyMachine.id}")
-                .fetchSemanticsNodes().isNotEmpty()
+            runCatching {
+                composeRule.onNodeWithTag("machines_list_lazy")
+                    .performScrollToNode(hasTestTag("machine_card_${legacyMachine.id}"))
+                true
+            }.getOrDefault(false)
         }
         composeRule.onNodeWithTag("machine_card_${legacyMachine.id}")
             .assert(hasAnyDescendant(hasText("Parcelamento padrão (1, 2, 3, 4, 6 e 12x)", substring = true)))
 
         // 1) Cadastra nova maquininha com máximo 18x e preenche taxa para 13x e 20x
-        composeRule.onNodeWithTag("new_machine_button").performClick()
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("new_machine_button"))
+        composeRule.onNodeWithTag("new_machine_button").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_name_input").performTextInput("PagBank F1")
         composeRule.onNodeWithTag("machine_debit_rate_input").performTextInput("1,89")
@@ -292,16 +306,19 @@ class StageV24aMachinesUiTest {
         }
 
         val created18 = runBlocking(Dispatchers.IO) {
-            app.machineRepository.observeMachines().first().first { it.name == "PagBank F1" }
+            app.machineRepository.observeMachines().first().first { it.name == "PAGBANK F1" }
         }
         assertEquals(18, created18.maxInstallments)
         assertEquals(520, created18.installmentAddonsBps[13])
         assertEquals(840, created18.installmentAddonsBps[20])
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${created18.id}"))
         composeRule.onNodeWithTag("machine_card_${created18.id}")
-            .performScrollTo()
             .assert(hasAnyDescendant(hasText("Parcelamento ativo (até 18x)", substring = true)))
 
         // 2) Edita para máximo 12x -> taxas de 13x e 20x devem permanecer salvas
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("edit_machine_${created18.id}"))
         composeRule.onNodeWithTag("edit_machine_${created18.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_editor_scroll")
@@ -325,11 +342,15 @@ class StageV24aMachinesUiTest {
         assertEquals(12, updated12.maxInstallments)
         assertEquals(520, updated12.installmentAddonsBps[13])
         assertEquals(840, updated12.installmentAddonsBps[20])
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${created18.id}"))
         composeRule.onNodeWithTag("machine_card_${created18.id}")
             .performScrollTo()
             .assert(hasAnyDescendant(hasText("Parcelamento ativo (até 12x)", substring = true)))
 
         // 3) Reabre edição, seleciona modo legado explícito, confirma dirty check ao voltar e depois salva
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("edit_machine_${created18.id}"))
         composeRule.onNodeWithTag("edit_machine_${created18.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_editor_scroll")
@@ -358,8 +379,9 @@ class StageV24aMachinesUiTest {
         assertNull(revertedLegacy.maxInstallments)
         assertEquals(520, revertedLegacy.installmentAddonsBps[13])
         assertEquals(840, revertedLegacy.installmentAddonsBps[20])
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_card_${created18.id}"))
         composeRule.onNodeWithTag("machine_card_${created18.id}")
-            .performScrollTo()
             .assert(hasAnyDescendant(hasText("Parcelamento padrão (1, 2, 3, 4, 6 e 12x)", substring = true)))
     }
 }

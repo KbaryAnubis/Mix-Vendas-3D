@@ -981,9 +981,11 @@ class RealSaleDateTest {
         // 5) Nomes: editar pessoa exibe mv3d_check no botão de salvar edição
         composeRule.onNodeWithTag("mais_item_names").performScrollTo().performClick()
         waitForTag("screen_names")
-        composeRule.onNodeWithTag("edit_person_$seededPersonId").performScrollTo().performClick()
+        scrollToTagInList("screen_names", "edit_person_$seededPersonId")
+        composeRule.onNodeWithTag("edit_person_$seededPersonId").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("save_person_button").performScrollTo().assertIsDisplayed()
+        scrollToTagInList("screen_names", "save_person_button")
+        composeRule.onNodeWithTag("save_person_button").assertIsDisplayed()
         composeRule.onNodeWithTag("icon_mv3d_check_person", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithTag("topbar_back_button").performClick()
         waitForTag("screen_mais")

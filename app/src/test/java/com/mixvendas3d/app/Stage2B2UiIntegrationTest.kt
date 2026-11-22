@@ -116,11 +116,11 @@ class Stage2B2UiIntegrationTest {
         }
 
         val tonMachine = runBlocking(Dispatchers.IO) {
-            app.machineRepository.observeMachines().first().first { it.name == "Ton Pro" }
+            app.machineRepository.observeMachines().first().first { it.name == "TON PRO" }
         }
         assertEquals(190, tonMachine.debitRateBps)
         assertEquals(280, tonMachine.creditDefaultRateBps)
-        assertEquals(250, tonMachine.customBrandRates.firstOrNull { it.name == "Visa Custom" }?.creditRateBps)
+        assertEquals(250, tonMachine.customBrandRates.firstOrNull { it.name == "VISA CUSTOM" }?.creditRateBps)
         assertEquals(160, tonMachine.installmentAddonsBps[3])
 
         // 2) Cria maquininha SOMENTE DÉBITO (crédito desativado)
@@ -142,19 +142,18 @@ class Stage2B2UiIntegrationTest {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             composeRule.onAllNodesWithTag("machine_editor_dialog").fetchSemanticsNodes().isEmpty() &&
                 composeRule.onAllNodesWithTag("machines_feedback_banner")
-                    .fetchSemanticsNodes().isNotEmpty() &&
-                composeRule.onAllNodesWithTag("machine_credit_switch_${tonMachine.id}")
                     .fetchSemanticsNodes().isNotEmpty()
         }
         val debitOnlyMachine = runBlocking(Dispatchers.IO) {
             val all = app.machineRepository.observeMachines().first()
             assertEquals(2, all.size)
-            all.first { it.name == "Cartão Débito Local" }
+            all.first { it.name == "CARTÃO DÉBITO LOCAL" }
         }
 
-        // 3) Desativa e reativa crédito na "Ton Pro" pelo card e verifica preservação
+        // 3) Desativa e reativa crédito na "TON PRO" pelo card e verifica preservação
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_credit_switch_${tonMachine.id}"))
         composeRule.onNodeWithTag("machine_credit_switch_${tonMachine.id}")
-            .performScrollTo()
             .performClick()
         composeRule.waitUntil(timeoutMillis = 3_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -163,14 +162,15 @@ class Stage2B2UiIntegrationTest {
             }
         }
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("machines_list_lazy")
+            .performScrollToNode(hasTestTag("machine_credit_switch_${tonMachine.id}"))
         composeRule.onNodeWithTag("machine_credit_switch_${tonMachine.id}")
-            .performScrollTo()
             .performClick()
         composeRule.waitUntil(timeoutMillis = 3_000L) {
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             runBlocking(Dispatchers.IO) {
                 val restored = app.machineRepository.observeMachines().first().first { it.id == tonMachine.id }
-                restored.creditEnabled && restored.customBrandRates.firstOrNull { it.name == "Visa Custom" }?.creditRateBps == 250 && restored.installmentAddonsBps[3] == 160
+                restored.creditEnabled && restored.customBrandRates.firstOrNull { it.name == "VISA CUSTOM" }?.creditRateBps == 250 && restored.installmentAddonsBps[3] == 160
             }
         }
 
@@ -197,7 +197,7 @@ class Stage2B2UiIntegrationTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("machine_picker_row_${debitOnlyMachine.id}").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("Cartão Débito Local").assertExists()
+        composeRule.onNodeWithText("CARTÃO DÉBITO LOCAL").assertExists()
 
         // Ao mudar para Crédito, a maquininha somente débito incompatível é limpa e NÃO aparece na lista
         composeRule.onNodeWithTag("pay_method_credit").performScrollTo().performClick()

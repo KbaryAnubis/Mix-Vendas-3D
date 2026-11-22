@@ -276,10 +276,10 @@ class StageV24b2aMachineMaxInstallmentsAndMigrationTest {
                     vm.saveMachine()
 
                     withTimeout(5_000L) {
-                        vm.uiState.first { !it.editor.isOpen && it.machines.any { m -> m.name == "PagBank Editada VM" } }
+                        vm.uiState.first { !it.editor.isOpen && it.machines.any { m -> m.name == "PAGBANK EDITADA VM" } }
                     }
                     val afterVmEdit = repo3.observeMachines().first().single { it.id == created.id }
-                    assertEquals("PagBank Editada VM", afterVmEdit.name)
+                    assertEquals("PAGBANK EDITADA VM", afterVmEdit.name)
                     assertEquals(160, afterVmEdit.debitRateBps)
                     assertEquals(18, afterVmEdit.maxInstallments)
                 } finally {

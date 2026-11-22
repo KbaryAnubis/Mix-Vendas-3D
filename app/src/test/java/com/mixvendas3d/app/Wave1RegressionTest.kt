@@ -264,7 +264,7 @@ class Wave1RegressionTest {
             val persisted = runBlocking(Dispatchers.IO) {
                 repo.observeMachines().first().first { it.id == created.id }
             }
-            assertEquals("Stone Loja Principal", persisted.name)
+            assertEquals("STONE LOJA PRINCIPAL", persisted.name)
             val savedAlelo = persisted.findCustomBrand(aleloKey)!!
             assertEquals(250, savedAlelo.creditRateBps)
             assertEquals(120, savedAlelo.debitRateBps)
