@@ -98,7 +98,7 @@ import com.mixvendas3d.app.ui.theme.V19TopBarStart
 import com.mixvendas3d.app.util.CurrencyFormatter
 
 fun personAccentColor(index: Int): Color =
-    V19PersonPalette[index % V19PersonPalette.size]
+    V19PersonPalette[Math.floorMod(index, V19PersonPalette.size)]
 
 @Composable
 fun GlobalCastleWallpaper(

@@ -42,6 +42,22 @@ object MonetaryRounding {
         }
     }
 
+    fun safeAddOrNull(a: Long, b: Long): Long? {
+        return try {
+            safeAdd(a, b)
+        } catch (_: FinancialOverflowException) {
+            null
+        }
+    }
+
+    fun safeMultiplyOrNull(a: Long, b: Int): Long? {
+        return try {
+            safeMultiply(a, b)
+        } catch (_: FinancialOverflowException) {
+            null
+        }
+    }
+
     /**
      * Calcula uma fração em pontos-base (1% = 100 bps, 100% = 10_000 bps)
      * utilizando arredondamento half-up puramente em inteiros, protegido contra overflow.

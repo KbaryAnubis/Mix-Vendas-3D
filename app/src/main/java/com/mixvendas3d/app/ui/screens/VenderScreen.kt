@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mixvendas3d.app.R
+import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.calculation.SaleFinancialEngine
 import com.mixvendas3d.app.domain.models.CardBrand
 import com.mixvendas3d.app.domain.models.Machine
@@ -495,10 +496,14 @@ fun VenderScreen(
                     if (showDiscountOptions || form.isDiscountTargetMissing) {
                         Spacer(modifier = Modifier.height(12.dp))
                         val targetEntry = selectedEntries.firstOrNull { it.first.id == form.discountTargetProductId }
+                        val targetLineSubtotal = targetEntry?.let {
+                            MonetaryRounding.safeMultiplyOrNull(it.first.price.rawCents, it.second)
+                        }
                         val targetExceededError = if (
                             showDiscountOptions &&
                             targetEntry != null &&
-                            discountCents >= targetEntry.first.price.rawCents * targetEntry.second
+                            targetLineSubtotal != null &&
+                            discountCents >= targetLineSubtotal
                         ) {
                             "O desconto (${CurrencyFormatter.formatBrl(MoneyCents(discountCents))}) não pode zerar ou superar o valor de ${targetEntry.first.name}."
                         } else {
@@ -803,8 +808,11 @@ private fun SelectedSaleItemRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            val lineTotalText = MonetaryRounding.safeMultiplyOrNull(product.price.rawCents, quantity)
+                ?.let { CurrencyFormatter.formatBrl(MoneyCents(it)) }
+                ?: "Limite excedido"
             Text(
-                text = "Unit.: ${CurrencyFormatter.formatBrl(product.price)} · Total: ${CurrencyFormatter.formatBrl(MoneyCents(product.price.rawCents * quantity))}",
+                text = "Unit.: ${CurrencyFormatter.formatBrl(product.price)} · Total: $lineTotalText",
                 fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.sp,
@@ -1047,12 +1055,13 @@ private fun MachineCardExtrasSection(
     val showHistoricalMachineNotice = canUseHistorical && selectedMachine != null && (
         catalogMachine == null ||
             catalogMachine.name != selectedMachine.name ||
+            ((form.selectedMethod == PreviewPaymentMethod.CREDIT || form.selectedMethod == PreviewPaymentMethod.DEBIT) &&
+                catalogMachine.brandRatesEnabled &&
+                CardBrand.fromStorageKey(selectedBrandKey) == null &&
+                catalogMachine.findCustomBrand(selectedBrandKey) == null) ||
             (form.selectedMethod == PreviewPaymentMethod.CREDIT &&
                 (!catalogMachine.installmentsEnabled && selectedMachine.installmentsEnabled ||
-                    !catalogMachine.isInstallmentAllowed(form.selectedInstallments) ||
-                    (catalogMachine.brandRatesEnabled &&
-                        CardBrand.fromStorageKey(selectedBrandKey) == null &&
-                        catalogMachine.findCustomBrand(selectedBrandKey) == null))) ||
+                    !catalogMachine.isInstallmentAllowed(form.selectedInstallments))) ||
             catalogMachine.effectiveAutomaticRateBpsForKey(
                 method = form.selectedMethod,
                 brandKey = selectedBrandKey,
@@ -1165,8 +1174,14 @@ private fun MachineCardExtrasSection(
             if (form.selectedMethod == PreviewPaymentMethod.DEBIT && optionsMachine.brandRatesEnabled) {
                 val debitBrandOptions: List<Pair<String, String>> = if (catalogMachine != null) {
                     val standardOptions = CardBrand.entries.map { brand ->
-                        val rateBps = catalogMachine.baseDebitRateBps(brand)
-                        val suffix = if (catalogMachine.usesBrandSpecificRate(brand)) {
+                        val rateSource = if (canUseHistorical && brand.storageKey == selectedBrandKey) {
+                            selectedMachine
+                        } else {
+                            catalogMachine
+                        }
+                        val rateBps = rateSource.baseDebitRateBps(brand)
+                        val hasSpecificDebit = rateSource.brandRatesEnabled && rateSource.brandDebitRatesBps.containsKey(brand)
+                        val suffix = if (hasSpecificDebit) {
                             RateFormatter.formatBpsAsPercent(rateBps)
                         } else {
                             "${RateFormatter.formatBpsAsPercent(rateBps)} padrão"
@@ -1174,13 +1189,36 @@ private fun MachineCardExtrasSection(
                         brand.storageKey to "${brand.label} ($suffix)"
                     }
                     val customOptions = catalogMachine.customBrandRates.map { custom ->
-                        val rateBps = catalogMachine.baseDebitRateBpsForKey(custom.key)
-                        custom.key to "${custom.name} (${RateFormatter.formatBpsAsPercent(rateBps)})"
+                        val rateSource = if (canUseHistorical && custom.key == selectedBrandKey) {
+                            selectedMachine
+                        } else {
+                            catalogMachine
+                        }
+                        val rateBps = rateSource.baseDebitRateBpsForKey(custom.key)
+                        val hasSpecificDebit = rateSource.brandRatesEnabled &&
+                            rateSource.findCustomBrand(custom.key)?.debitRateBps != null
+                        val suffix = if (hasSpecificDebit) {
+                            RateFormatter.formatBpsAsPercent(rateBps)
+                        } else {
+                            "${RateFormatter.formatBpsAsPercent(rateBps)} padrão"
+                        }
+                        custom.key to "${custom.name} ($suffix)"
                     }
                     standardOptions + customOptions
                 } else {
                     val rateBps = selectedMachine.baseDebitRateBpsForKey(selectedBrandKey)
-                    listOf(selectedBrandKey to "$selectedBrandLabel (${RateFormatter.formatBpsAsPercent(rateBps)})")
+                    val standard = CardBrand.fromStorageKey(selectedBrandKey)
+                    val hasSpecificDebit = if (standard != null) {
+                        selectedMachine.brandRatesEnabled && selectedMachine.brandDebitRatesBps.containsKey(standard)
+                    } else {
+                        selectedMachine.brandRatesEnabled && selectedMachine.findCustomBrand(selectedBrandKey)?.debitRateBps != null
+                    }
+                    val suffix = if (hasSpecificDebit) {
+                        RateFormatter.formatBpsAsPercent(rateBps)
+                    } else {
+                        "${RateFormatter.formatBpsAsPercent(rateBps)} padrão"
+                    }
+                    listOf(selectedBrandKey to "$selectedBrandLabel ($suffix)")
                 }
                 SimpleDropdownField(
                     label = stringResource(R.string.sell_brand_label),

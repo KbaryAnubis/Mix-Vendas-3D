@@ -17,10 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -477,10 +477,10 @@ fun ProductsDropdownField(
                         modifier = Modifier.weight(1f),
                     )
                     Icon(
-                        painter = painterResource(id = R.drawable.mv3d_buscar),
+                        imageVector = Icons.Filled.KeyboardArrowDown,
                         contentDescription = null,
                         tint = if (enabled) V19PurpleSoftText else V19InkMuted,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -489,30 +489,28 @@ fun ProductsDropdownField(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier.background(Color(0xFF23103C)),
             ) {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    options.forEach { (id, text) ->
-                        val itemTag = when {
-                            id == null -> "${testTag}_option_none"
-                            testTag == "product_fee_owner_dropdown" -> "fee_owner_$id"
-                            else -> "${testTag}_option_$id"
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = text,
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = Color.White,
-                                )
-                            },
-                            onClick = {
-                                expanded = false
-                                onOptionSelected(id)
-                            },
-                            modifier = Modifier.testTag(itemTag),
-                        )
+                options.forEach { (id, text) ->
+                    val itemTag = when {
+                        id == null -> "${testTag}_option_none"
+                        testTag == "product_fee_owner_dropdown" -> "fee_owner_$id"
+                        else -> "${testTag}_option_$id"
                     }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = text,
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = Color.White,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onOptionSelected(id)
+                        },
+                        modifier = Modifier.testTag(itemTag),
+                    )
                 }
             }
         }

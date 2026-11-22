@@ -521,13 +521,15 @@ object SystemUpdateAnalyzer {
         }
 
         val resolvedOldBrandKey = oldSnap.resolvedAppliedBrandKey
-        if (oldCalc.paymentMethod == SalePaymentMethod.CREDIT && currentMachine.brandRatesEnabled) {
+        if (oldCalc.paymentMethod.usesMachine && currentMachine.brandRatesEnabled) {
             if (resolvedOldBrandKey.isNullOrBlank()) {
-                conflictCodes.add(SystemUpdateConflictCode.MISSING_REQUIRED_BRAND)
-                conflictReasons.add(
-                    "A maquininha \"${currentMachine.name}\" passou a exigir bandeira, ausente na venda original.",
-                )
-                hasMachineConflict = true
+                if (oldCalc.paymentMethod == SalePaymentMethod.CREDIT) {
+                    conflictCodes.add(SystemUpdateConflictCode.MISSING_REQUIRED_BRAND)
+                    conflictReasons.add(
+                        "A maquininha \"${currentMachine.name}\" passou a exigir bandeira, ausente na venda original.",
+                    )
+                    hasMachineConflict = true
+                }
             } else if (CardBrand.fromStorageKey(resolvedOldBrandKey) == null) {
                 val isRegisteredCustom = CustomBrandKeyCodec.isValidCustomBrandKey(resolvedOldBrandKey) &&
                     currentMachine.findCustomBrand(resolvedOldBrandKey) != null

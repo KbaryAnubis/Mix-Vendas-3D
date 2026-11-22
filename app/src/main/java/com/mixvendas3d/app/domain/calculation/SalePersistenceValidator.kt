@@ -348,27 +348,27 @@ object SalePersistenceValidator {
                 if (snapshot.effectiveRateBps != result.effectiveFeeRateBps) {
                     throw SalePersistenceException("Taxa efetiva do snapshot da maquininha difere da venda.")
                 }
+                val resolvedBrandKey = snapshot.resolvedAppliedBrandKey
+                if (resolvedBrandKey != null) {
+                    if (!CustomBrandKeyCodec.isKnownBrandKey(resolvedBrandKey)) {
+                        throw SalePersistenceException("Chave de bandeira inválida no snapshot da venda: $resolvedBrandKey.")
+                    }
+                    val expectedStandard = CardBrand.fromStorageKey(resolvedBrandKey)
+                    if (snapshot.appliedBrand != null && snapshot.appliedBrand.storageKey != resolvedBrandKey) {
+                        throw SalePersistenceException("Bandeira aplicada inconsistente no snapshot da venda.")
+                    }
+                    if (snapshot.appliedBrand == null && expectedStandard != null) {
+                        throw SalePersistenceException("Bandeira padrão inconsistente no snapshot da venda.")
+                    }
+                }
                 if (result.paymentMethod == SalePaymentMethod.DEBIT) {
-                    if (snapshot.appliedBrand != null ||
-                        snapshot.resolvedAppliedBrandKey != null ||
-                        snapshot.appliedInstallments != null
-                    ) {
-                        throw SalePersistenceException("Pagamento em Débito não deve possuir bandeira ou parcelamento aplicados.")
+                    if (snapshot.appliedInstallments != null) {
+                        throw SalePersistenceException("Pagamento em Débito não deve possuir parcelamento aplicado.")
+                    }
+                    if (!snapshot.brandRatesEnabled && (snapshot.appliedBrand != null || resolvedBrandKey != null)) {
+                        throw SalePersistenceException("Pagamento em Débito sem taxas por bandeira não deve possuir bandeira aplicada.")
                     }
                 } else {
-                    val resolvedBrandKey = snapshot.resolvedAppliedBrandKey
-                    if (resolvedBrandKey != null) {
-                        if (!CustomBrandKeyCodec.isKnownBrandKey(resolvedBrandKey)) {
-                            throw SalePersistenceException("Chave de bandeira inválida no snapshot da venda: $resolvedBrandKey.")
-                        }
-                        val expectedStandard = CardBrand.fromStorageKey(resolvedBrandKey)
-                        if (snapshot.appliedBrand != null && snapshot.appliedBrand.storageKey != resolvedBrandKey) {
-                            throw SalePersistenceException("Bandeira aplicada inconsistente no snapshot da venda.")
-                        }
-                        if (snapshot.appliedBrand == null && expectedStandard != null) {
-                            throw SalePersistenceException("Bandeira padrão inconsistente no snapshot da venda.")
-                        }
-                    }
                     if (snapshot.brandRatesEnabled && resolvedBrandKey.isNullOrBlank()) {
                         throw SalePersistenceException("Snapshot em Crédito com taxas por bandeira exige a bandeira aplicada.")
                     }

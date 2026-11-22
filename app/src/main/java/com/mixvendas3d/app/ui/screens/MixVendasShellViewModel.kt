@@ -1381,7 +1381,7 @@ class MixVendasShellViewModel(
             if (!canUseHistoricalMachineSnapshot(form)) return false
             if (form.selectedMachineId != origSnap.machineId) return false
             val expectedBrandKey = origSnap.resolvedAppliedBrandKey ?: CardBrand.VISA.storageKey
-            if (origSnap.brandRatesEnabled && calc.paymentMethod == SalePaymentMethod.CREDIT && form.resolvedBrandKey() != expectedBrandKey) {
+            if (origSnap.brandRatesEnabled && calc.paymentMethod.usesMachine && form.resolvedBrandKey() != expectedBrandKey) {
                 return false
             }
             val expectedInstallments = origSnap.appliedInstallments ?: 1
@@ -1496,8 +1496,17 @@ class MixVendasShellViewModel(
             null
         }
 
-        val cardBrandKey = if (paymentMethod == SalePaymentMethod.CREDIT && selectedMachine?.brandRatesEnabled == true) {
-            form.resolvedBrandKey()
+        val cardBrandKey = if (paymentMethod.usesMachine && selectedMachine?.brandRatesEnabled == true) {
+            if (
+                paymentMethod == SalePaymentMethod.DEBIT &&
+                canUseHistoricalMachineSnapshot(form) &&
+                form.historicalMachineSnapshot?.resolvedAppliedBrandKey == null &&
+                form.resolvedBrandKey() == CardBrand.VISA.storageKey
+            ) {
+                null
+            } else {
+                form.resolvedBrandKey()
+            }
         } else {
             null
         }
@@ -1595,7 +1604,7 @@ class MixVendasShellViewModel(
 
         val currentBrandKey = form.resolvedBrandKey()
         val isStandardBrand = CardBrand.fromStorageKey(currentBrandKey) != null
-        val validCustomBrandOnMachine = form.selectedMethod == PreviewPaymentMethod.CREDIT &&
+        val validCustomBrandOnMachine = usesMachine &&
             validMachine != null &&
             (canUseHistoricalMachineSnapshot(form) ||
                 (validMachine.brandRatesEnabled && validMachine.findCustomBrand(currentBrandKey) != null))
@@ -2285,14 +2294,26 @@ class MixVendasShellViewModel(
             productMap = products.associateBy { it.id },
         )
 
+        fun computeSelectedSubtotalCentsOrNull(
+            selectedQuantities: Map<String, Int>,
+            productMap: Map<String, Product>,
+        ): Long? {
+            var total = 0L
+            for ((id, qty) in selectedQuantities.entries) {
+                val safeQty = qty.coerceAtLeast(0)
+                if (safeQty == 0) continue
+                val price = productMap[id]?.price?.rawCents ?: 0L
+                val lineTotal = MonetaryRounding.safeMultiplyOrNull(price, safeQty) ?: return null
+                total = MonetaryRounding.safeAddOrNull(total, lineTotal) ?: return null
+            }
+            return total
+        }
+
         fun computeSelectedSubtotalCents(
             selectedQuantities: Map<String, Int>,
             productMap: Map<String, Product>,
         ): Long {
-            return selectedQuantities.entries.sumOf { (id, qty) ->
-                val price = productMap[id]?.price?.rawCents ?: 0L
-                price * qty.coerceAtLeast(0)
-            }
+            return computeSelectedSubtotalCentsOrNull(selectedQuantities, productMap) ?: Long.MAX_VALUE
         }
 
         fun parseBrlInputToCents(input: String): Long? =

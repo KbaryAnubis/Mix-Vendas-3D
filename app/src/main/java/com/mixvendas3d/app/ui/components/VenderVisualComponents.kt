@@ -61,6 +61,7 @@ import com.mixvendas3d.app.R
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.semantics.selected
+import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.models.FeeResponsibilityMode
 import com.mixvendas3d.app.domain.models.Machine
 import com.mixvendas3d.app.domain.models.MoneyCents
@@ -443,10 +444,14 @@ fun VenderAutoSplitSectionCard(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 selectedEntries.forEachIndexed { index, (product, qty) ->
-                    val lineSubtotal = MoneyCents(product.price.rawCents * qty)
+                    val lineSubtotalText = MonetaryRounding.safeMultiplyOrNull(product.price.rawCents, qty)
+                        ?.let { CurrencyFormatter.formatBrl(MoneyCents(it)) }
+                        ?: "Limite excedido"
                     val participantsLine = product.participants.joinToString(" · ") { split ->
-                        val totalShare = MoneyCents(split.amount.rawCents * qty)
-                        "${split.personName}: ${CurrencyFormatter.formatBrl(totalShare)}"
+                        val totalShareText = MonetaryRounding.safeMultiplyOrNull(split.amount.rawCents, qty)
+                            ?.let { CurrencyFormatter.formatBrl(MoneyCents(it)) }
+                            ?: "Limite excedido"
+                        "${split.personName}: $totalShareText"
                     }
                     val feeOwnerName = product.feeOwnerPersonId?.let { ownerId ->
                         product.participants.firstOrNull { it.personId == ownerId }?.personName
@@ -476,7 +481,7 @@ fun VenderAutoSplitSectionCard(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = CurrencyFormatter.formatBrl(lineSubtotal),
+                                text = lineSubtotalText,
                                 fontFamily = PlusJakartaSansFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,

@@ -410,23 +410,28 @@ object SaleFinancialEngine {
                 }
 
                 val requestedBrandKey = input.cardBrandKey ?: input.cardBrand?.storageKey
-                val (appliedBrand, appliedBrandKey) = if (
-                    input.paymentMethod == SalePaymentMethod.CREDIT &&
-                    machine.brandRatesEnabled
-                ) {
+                val (appliedBrand, appliedBrandKey) = if (machine.brandRatesEnabled) {
                     val key = requestedBrandKey?.takeIf { it.isNotBlank() }
-                        ?: throw SaleCalculationException("Selecione a bandeira do cartão para a maquininha \"${machine.name}\".")
-                    val standardBrand = CardBrand.fromStorageKey(key)
-                    if (standardBrand != null) {
-                        standardBrand to standardBrand.storageKey
-                    } else if (CustomBrandKeyCodec.isValidCustomBrandKey(key)) {
-                        val registeredCustomBrand = machine.findCustomBrand(key)
-                            ?: throw SaleCalculationException(
-                                "A bandeira personalizada \"${CustomBrandKeyCodec.decodeNameOrNull(key) ?: key}\" não está cadastrada na maquininha \"${machine.name}\".",
+                    when {
+                        key == null && input.paymentMethod == SalePaymentMethod.CREDIT ->
+                            throw SaleCalculationException(
+                                "Selecione a bandeira do cartão para a maquininha \"${machine.name}\".",
                             )
-                        null to registeredCustomBrand.key
-                    } else {
-                        throw SaleCalculationException("Chave de bandeira inválida ($key).")
+                        key == null -> null to null
+                        else -> {
+                            val standardBrand = CardBrand.fromStorageKey(key)
+                            if (standardBrand != null) {
+                                standardBrand to standardBrand.storageKey
+                            } else if (CustomBrandKeyCodec.isValidCustomBrandKey(key)) {
+                                val registeredCustomBrand = machine.findCustomBrand(key)
+                                    ?: throw SaleCalculationException(
+                                        "A bandeira personalizada \"${CustomBrandKeyCodec.decodeNameOrNull(key) ?: key}\" não está cadastrada na maquininha \"${machine.name}\".",
+                                    )
+                                null to registeredCustomBrand.key
+                            } else {
+                                throw SaleCalculationException("Chave de bandeira inválida ($key).")
+                            }
+                        }
                     }
                 } else {
                     null to null

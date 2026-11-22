@@ -1,9 +1,11 @@
 package com.mixvendas3d.app
 
 import android.os.Looper
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -126,9 +128,19 @@ class Stage2B1UiIntegrationTest {
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("fee_owner_${lucas.id}")
+        composeRule.onNodeWithTag("product_fee_owner_dropdown")
             .performScrollTo()
             .performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            composeRule.onAllNodesWithTag("fee_owner_${lucas.id}")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("fee_owner_${lucas.id}")
+            .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("product_fee_owner_dropdown")
+            .assert(hasText("Lucas", substring = true))
 
         composeRule.onNodeWithTag("save_product_button")
             .performScrollTo()

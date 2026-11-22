@@ -107,8 +107,15 @@ class StageV23ProductsUiTest {
         composeRule.onNodeWithTag("product_participant_amount_$carlosId").assert(hasText("7,00"))
         composeRule.onNodeWithTag("fee_mode_individual").performScrollTo().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("fee_owner_$anaId").performScrollTo().performClick()
+        composeRule.onNodeWithTag("product_fee_owner_dropdown").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            composeRule.onAllNodesWithTag("fee_owner_$anaId")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("fee_owner_$anaId").performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("product_fee_owner_dropdown").assert(hasText("Ana", substring = true))
 
         composeRule.onNodeWithTag("save_product_button").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
@@ -137,7 +144,7 @@ class StageV23ProductsUiTest {
         composeRule.onNodeWithTag("edit_product_${savedProduct.id}").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_editor_dialog").assertIsDisplayed()
-        composeRule.onNodeWithText("STATUS DO PRODUTO").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Produto ativo para novas vendas").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("product_active_switch").assertIsOn()
         composeRule.onNodeWithTag("product_active_switch").performScrollTo().performClick()
         composeRule.onNodeWithTag("save_product_button").performScrollTo().performClick()

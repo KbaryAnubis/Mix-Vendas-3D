@@ -163,7 +163,8 @@ class MachinesViewModel(
                 localId = custom.key,
                 persistedKey = custom.key,
                 name = custom.name,
-                rateInput = RateFormatter.formatBpsForInput(custom.rateBps),
+                creditRateInput = custom.creditRateBps?.let { RateFormatter.formatBpsForInput(it) }.orEmpty(),
+                debitRateInput = custom.debitRateBps?.let { RateFormatter.formatBpsForInput(it) }.orEmpty(),
             )
         }
 
@@ -237,7 +238,8 @@ class MachinesViewModel(
             editor.maxInstallments != baseline.maxInstallments ||
             editor.customBrandDrafts != baseline.customBrandDrafts ||
             editor.newCustomBrandNameInput != baseline.newCustomBrandNameInput ||
-            editor.newCustomBrandRateInput != baseline.newCustomBrandRateInput
+            editor.newCustomBrandCreditRateInput != baseline.newCustomBrandCreditRateInput ||
+            editor.newCustomBrandDebitRateInput != baseline.newCustomBrandDebitRateInput
     }
 
     fun onEditorNameChanged(value: String) {

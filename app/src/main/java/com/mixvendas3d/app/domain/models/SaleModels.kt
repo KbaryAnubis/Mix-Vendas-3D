@@ -245,26 +245,42 @@ fun SaleMachineSnapshot.toSnapshotMachine(
     } else {
         emptyMap()
     }
+    val reconstructedDebitBrands = if (paymentMethod == SalePaymentMethod.DEBIT && brandRatesEnabled && appliedBrand != null) {
+        mapOf(appliedBrand to automaticRateBps)
+    } else {
+        emptyMap()
+    }
     val reconstructedCustomBrands = if (
-        paymentMethod == SalePaymentMethod.CREDIT &&
+        paymentMethod.usesMachine &&
         brandRatesEnabled &&
         appliedBrand == null &&
         effectiveBrandKey != null
     ) {
         val decodedName = CustomBrandKeyCodec.decodeNameOrNull(effectiveBrandKey)
         if (decodedName != null) {
-            val baseCustomRate = if (installmentsEnabled && (appliedInstallments ?: 1) > 1) {
-                automaticRateBps.coerceAtMost(10_000)
+            if (paymentMethod == SalePaymentMethod.DEBIT) {
+                listOf(
+                    CustomCardBrandRate(
+                        key = effectiveBrandKey,
+                        name = decodedName,
+                        creditRateBps = null,
+                        debitRateBps = automaticRateBps,
+                    ),
+                )
             } else {
-                automaticRateBps
+                val baseCustomRate = if (installmentsEnabled && (appliedInstallments ?: 1) > 1) {
+                    automaticRateBps.coerceAtMost(10_000)
+                } else {
+                    automaticRateBps
+                }
+                listOf(
+                    CustomCardBrandRate(
+                        key = effectiveBrandKey,
+                        name = decodedName,
+                        creditRateBps = baseCustomRate,
+                    ),
+                )
             }
-            listOf(
-                CustomCardBrandRate(
-                    key = effectiveBrandKey,
-                    name = decodedName,
-                    creditRateBps = baseCustomRate,
-                ),
-            )
         } else {
             emptyList()
         }
@@ -303,6 +319,7 @@ fun SaleMachineSnapshot.toSnapshotMachine(
         creditDefaultRateBps = creditDefaultRateBps,
         brandRatesEnabled = brandRatesEnabled,
         brandRatesBps = reconstructedBrands,
+        brandDebitRatesBps = reconstructedDebitBrands,
         installmentsEnabled = installmentsEnabled,
         installmentAddonsBps = reconstructedInstallments,
         createdAtEpochMs = soldAtEpochMs,
