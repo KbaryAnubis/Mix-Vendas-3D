@@ -1319,6 +1319,8 @@ private fun MachineEditorContent(
                         enabled = !editor.isSaving,
                         onClick = onSave,
                         testTag = "save_machine_button",
+                        iconRes = R.drawable.mv3d_check,
+                        iconTestTag = "icon_mv3d_check_machine",
                     )
 
                     ProductsSecondaryOutlinedButton(

@@ -170,9 +170,10 @@ fun VenderChooseProductsButton(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Mv3dIcon(
-                iconRes = R.drawable.mv3d_produtos,
+                iconRes = R.drawable.mv3d_escolher_produto,
                 contentDescription = null,
-                size = 36.dp,
+                size = 48.dp,
+                modifier = Modifier.testTag("icon_mv3d_escolher_produto"),
             )
             Spacer(modifier = Modifier.width(if (compactLayout) 8.dp else 12.dp))
             Text(
@@ -190,6 +191,7 @@ fun VenderChooseProductsButton(
                 iconRes = R.drawable.mv3d_buscar,
                 contentDescription = null,
                 size = 32.dp,
+                modifier = Modifier.testTag("icon_mv3d_buscar_escolher_produto"),
             )
         }
     }
@@ -571,11 +573,12 @@ fun VenderPrimarySaveButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = Icons.Filled.Check,
+            Mv3dIcon(
+                iconRes = R.drawable.mv3d_check,
                 contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(22.dp),
+                size = 38.dp,
+                alpha = if (enabled) 1f else 0.55f,
+                modifier = Modifier.testTag("icon_mv3d_check_sale"),
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
@@ -583,7 +586,7 @@ fun VenderPrimarySaveButton(
                 fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 19.sp,
-                color = Color.White,
+                color = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -880,11 +883,11 @@ fun VenderProductPickerFooter(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
+                    Mv3dIcon(
+                        iconRes = R.drawable.mv3d_check,
                         contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        size = 34.dp,
+                        modifier = Modifier.testTag("icon_mv3d_check_picker_done"),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(

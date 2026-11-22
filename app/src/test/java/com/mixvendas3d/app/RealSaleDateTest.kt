@@ -1,6 +1,7 @@
 package com.mixvendas3d.app
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
@@ -631,6 +632,11 @@ class RealSaleDateTest {
         waitForTag("vender_feedback_banner")
         composeRule.onNodeWithTag("vender_feedback_banner").assertTextContains(yesterdayFormatted, substring = true)
 
+        // Nova venda subsequente nunca reutiliza data personalizada anterior: switch desativado e data = Hoje
+        composeRule.onNodeWithTag("custom_sale_date_switch").performScrollTo().assertIsOff()
+        composeRule.onNodeWithTag("sale_date_selector_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("sale_date_value_text").assertTextContains(todayFormatted)
+
         val persistedSales = runBlocking(Dispatchers.IO) {
             app.saleRepository.observeSales().first()
         }
@@ -777,6 +783,21 @@ class RealSaleDateTest {
 
         composeRule.onNodeWithTag("nav_tab_vender").performClick()
         waitForTag("screen_vender")
+
+        // Verifica posicionamento obrigatório: "Usar data personalizada" imediatamente abaixo de "Observação (opcional)"
+        composeRule.onNodeWithTag("sale_note_card").performScrollTo().assertIsDisplayed()
+        val pickerBounds = composeRule.onNodeWithTag("open_product_picker_button").getUnclippedBoundsInRoot()
+        val noteBounds = composeRule.onNodeWithTag("sale_note_card").getUnclippedBoundsInRoot()
+        val dateBounds = composeRule.onNodeWithTag("sale_date_card").getUnclippedBoundsInRoot()
+        assertTrue(
+            "Esperava Escolher produtos (${pickerBounds.bottom}) acima de Observação (${noteBounds.top})",
+            pickerBounds.bottom <= noteBounds.top,
+        )
+        assertTrue(
+            "Esperava Observação (${noteBounds.bottom}) acima do bloco de data (${dateBounds.top})",
+            noteBounds.bottom <= dateBounds.top,
+        )
+
         composeRule.onNodeWithTag("sale_date_card").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Usar data personalizada").assertIsDisplayed()
         composeRule.onNodeWithTag("custom_sale_date_switch").assertIsOff()
@@ -828,7 +849,7 @@ class RealSaleDateTest {
 
     @Test
     @Config(sdk = [34], qualifiers = "w360dp-h640dp-xxhdpi")
-    fun `08 products screen stacks Novo produto above Categorias vertically with full visibility and actions`() {
+    fun `08 products screen stacks Novo produto above Categorias vertically with matching primary hierarchy and icons`() {
         composeRule.onNodeWithTag("nav_tab_mais").performClick()
         waitForTag("screen_mais")
         composeRule.onNodeWithTag("mais_item_types_products").performScrollTo().performClick()
@@ -840,11 +861,13 @@ class RealSaleDateTest {
         val newProductNode = composeRule.onNodeWithTag("new_product_button").assertIsDisplayed()
         val categoriesNode = composeRule.onNodeWithTag("manage_categories_button").assertIsDisplayed()
         composeRule.onNodeWithText("Categorias").assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_novo_produto", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_categoria_button", useUnmergedTree = true).assertIsDisplayed()
 
         val newBounds = newProductNode.getUnclippedBoundsInRoot()
         val catBounds = categoriesNode.getUnclippedBoundsInRoot()
 
-        // Disposição vertical obrigatória: Novo produto em cima, Categorias logo abaixo, mesma largura total
+        // Disposição vertical obrigatória: Novo produto em cima, Categorias logo abaixo, mesma largura e altura primária
         assertTrue(
             "Esperava Novo produto (${newBounds.bottom}) acima de Categorias (${catBounds.top})",
             newBounds.bottom <= catBounds.top,
@@ -853,7 +876,11 @@ class RealSaleDateTest {
             "Esperava mesma largura aproximada para ambos os botões (${newBounds.width} vs ${catBounds.width})",
             kotlin.math.abs(newBounds.width.value - catBounds.width.value) <= 2f,
         )
-        assertTrue("Esperava altura mínima >= 48dp para Categorias", catBounds.height.value >= 48f)
+        assertTrue(
+            "Esperava mesma altura primária para Novo produto (${newBounds.height}) e Categorias (${catBounds.height})",
+            kotlin.math.abs(newBounds.height.value - catBounds.height.value) <= 2f,
+        )
+        assertTrue("Esperava altura mínima >= 56dp para Categorias", catBounds.height.value >= 56f)
 
         // Ação de Categorias funciona
         categoriesNode.performClick()
@@ -866,5 +893,107 @@ class RealSaleDateTest {
             .performScrollToNode(hasTestTag("new_product_button"))
         composeRule.onNodeWithTag("new_product_button").performClick()
         waitForTag("product_editor_dialog")
+    }
+
+    @Test
+    fun `09 all seven custom PNG icons resolve cleanly and are visible across expected screens and save buttons`() {
+        val app = context as MixVendasApplication
+        val (seededPersonId, seededCategoryId) = runBlocking(Dispatchers.IO) {
+            val person = app.catalogRepository.createPerson("Carlos")
+            val main = app.catalogRepository.createProductCategory("Colecionaveis")
+            person.id to main.id
+        }
+
+        // 1) Valida existência e decodificação lossless 2048x2048 dos 7 recursos em drawable-nodpi
+        val requiredDrawables = listOf(
+            "mv3d_subcategoria" to R.drawable.mv3d_subcategoria,
+            "mv3d_nova_categoria" to R.drawable.mv3d_nova_categoria,
+            "mv3d_check" to R.drawable.mv3d_check,
+            "mv3d_vendas" to R.drawable.mv3d_vendas,
+            "mv3d_escolher_produto" to R.drawable.mv3d_escolher_produto,
+            "mv3d_novo_produto" to R.drawable.mv3d_novo_produto,
+            "mv3d_categoria" to R.drawable.mv3d_categoria,
+        )
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        requiredDrawables.forEach { (name, resId) ->
+            assertTrue("Resource ID inválido para $name", resId != 0)
+            BitmapFactory.decodeResource(context.resources, resId, boundsOpts)
+            assertEquals("Largura inesperada para $name", 2048, boundsOpts.outWidth)
+            assertEquals("Altura inesperada para $name", 2048, boundsOpts.outHeight)
+        }
+
+        // 2) Aba VENDAS: ícone mv3d_vendas na barra inferior e estado vazio
+        composeRule.onNodeWithTag("nav_tab_vendas").assertIsDisplayed().performClick()
+        waitForTag("screen_vendas")
+        scrollToTagInList("screen_vendas", "vendas_empty_state")
+        composeRule.onNodeWithTag("icon_mv3d_vendas_empty", useUnmergedTree = true).assertIsDisplayed()
+
+        // 3) Aba VENDER: mv3d_escolher_produto + mv3d_buscar preservado + mv3d_check no salvar e no concluir seleção
+        composeRule.onNodeWithTag("nav_tab_vender").performClick()
+        waitForTag("screen_vender")
+        composeRule.onNodeWithTag("open_product_picker_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_escolher_produto", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_buscar_escolher_produto", useUnmergedTree = true).assertIsDisplayed()
+
+        composeRule.onNodeWithTag("open_product_picker_button").performClick()
+        waitForTag("product_picker_dialog")
+        composeRule.onNodeWithTag("icon_mv3d_check_picker_done", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("close_product_picker_button").performClick()
+        waitForTagGone("product_picker_dialog")
+
+        composeRule.onNodeWithTag("save_sale_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_check_sale", useUnmergedTree = true).assertIsDisplayed()
+
+        // 4) Produtos & Categorias: mv3d_novo_produto, mv3d_categoria, mv3d_nova_categoria, mv3d_subcategoria, mv3d_check
+        composeRule.onNodeWithTag("nav_tab_mais").performClick()
+        waitForTag("screen_mais")
+        composeRule.onNodeWithTag("mais_item_types_products").performScrollTo().performClick()
+        waitForTag("screen_products")
+
+        composeRule.onNodeWithTag("new_product_button").performClick()
+        waitForTag("product_editor_dialog")
+        composeRule.onNodeWithTag("save_product_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_check_product", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("screen_products")
+
+        composeRule.onNodeWithTag("screen_products")
+            .performScrollToNode(hasTestTag("manage_categories_button"))
+        composeRule.onNodeWithTag("manage_categories_button").performClick()
+        waitForTag("category_management_dialog")
+        composeRule.onNodeWithTag("icon_mv3d_categoria_header", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_nova_categoria", useUnmergedTree = true).assertIsDisplayed()
+        scrollToTagInList("category_management_scroll", "add_subcategory_button_$seededCategoryId")
+        composeRule.onNodeWithTag("icon_mv3d_categoria_card_$seededCategoryId", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_subcategoria_$seededCategoryId", useUnmergedTree = true).assertIsDisplayed()
+
+        composeRule.onNodeWithTag("add_subcategory_button_$seededCategoryId").performClick()
+        waitForTag("create_edit_category_dialog")
+        composeRule.onNodeWithTag("save_category_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_check_category", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("category_management_dialog")
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("screen_products")
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("screen_mais")
+
+        // 5) Nomes: editar pessoa exibe mv3d_check no botão de salvar edição
+        composeRule.onNodeWithTag("mais_item_names").performScrollTo().performClick()
+        waitForTag("screen_names")
+        composeRule.onNodeWithTag("edit_person_$seededPersonId").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("save_person_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("icon_mv3d_check_person", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("topbar_back_button").performClick()
+        waitForTag("screen_mais")
+
+        // 6) Maquininhas: abrir cadastro de maquininha exibe mv3d_check no botão Salvar maquininha
+        composeRule.onNodeWithTag("mais_item_machines").performScrollTo().performClick()
+        waitForTag("screen_machines")
+        composeRule.onNodeWithTag("new_machine_button").performClick()
+        waitForTag("machine_editor_dialog")
+        scrollToTagInList("machine_editor_scroll", "save_machine_button")
+        composeRule.onNodeWithTag("icon_mv3d_check_machine", useUnmergedTree = true).assertIsDisplayed()
     }
 }

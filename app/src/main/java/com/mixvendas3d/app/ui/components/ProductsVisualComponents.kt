@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mixvendas3d.app.R
@@ -177,29 +178,43 @@ fun ProductsPrimaryCtaButton(
     enabled: Boolean,
     onClick: () -> Unit,
     testTag: String,
-    @DrawableRes iconRes: Int = R.drawable.ic_products_save,
+    @DrawableRes iconRes: Int = R.drawable.mv3d_check,
     modifier: Modifier = Modifier,
+    iconSize: Dp = 38.dp,
+    iconTestTag: String? = null,
 ) {
     val shape = RoundedCornerShape(18.dp)
+    val isCustomMv3dIcon = iconRes == R.drawable.mv3d_produtos ||
+        iconRes == R.drawable.mv3d_novo_produto ||
+        iconRes == R.drawable.mv3d_categoria ||
+        iconRes == R.drawable.mv3d_nova_categoria ||
+        iconRes == R.drawable.mv3d_subcategoria ||
+        iconRes == R.drawable.mv3d_check
     Box(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .shadow(
-                elevation = 14.dp,
+                elevation = if (enabled) 14.dp else 4.dp,
                 shape = shape,
-                ambientColor = HomeCtaShadowGlow.copy(alpha = 0.70f),
-                spotColor = HomeCtaShadowGlow.copy(alpha = 0.85f),
+                ambientColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.70f else 0.22f),
+                spotColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.85f else 0.28f),
             )
             .clip(shape)
             .background(
-                Brush.horizontalGradient(
-                    listOf(HomeCtaGradientStart, HomeCtaGradientEnd),
-                ),
+                if (enabled) {
+                    Brush.horizontalGradient(listOf(HomeCtaGradientStart, HomeCtaGradientEnd))
+                } else {
+                    Brush.horizontalGradient(listOf(Color(0xFF422768), Color(0xFF331B54)))
+                },
             )
             .border(
                 width = 1.5.dp,
-                color = HomeCtaBorderGlow.copy(alpha = 0.88f),
+                color = if (enabled) {
+                    HomeCtaBorderGlow.copy(alpha = 0.88f)
+                } else {
+                    HomeCardNeonBorder.copy(alpha = 0.40f)
+                },
                 shape = shape,
             )
             .clickable(
@@ -207,7 +222,7 @@ fun ProductsPrimaryCtaButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = 20.dp, vertical = 15.dp)
+            .padding(horizontal = 20.dp, vertical = 14.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center,
     ) {
@@ -215,27 +230,31 @@ fun ProductsPrimaryCtaButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            if (iconRes == R.drawable.mv3d_produtos) {
+            val iconModifier = if (iconTestTag != null) Modifier.testTag(iconTestTag) else Modifier
+            if (isCustomMv3dIcon) {
                 Mv3dIcon(
                     iconRes = iconRes,
                     contentDescription = null,
-                    size = 36.dp,
+                    size = iconSize,
+                    alpha = if (enabled) 1f else 0.55f,
+                    modifier = iconModifier,
                 )
             } else {
                 Icon(
                     painter = painterResource(id = iconRes),
                     contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
+                    tint = if (enabled) Color.White else Color.White.copy(alpha = 0.55f),
+                    modifier = iconModifier.size(20.dp),
                 )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = text,
                 fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
-                color = Color.White,
+                color = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
+                textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -249,6 +268,9 @@ fun ProductsSecondaryOutlinedButton(
     onClick: () -> Unit,
     testTag: String,
     modifier: Modifier = Modifier,
+    @DrawableRes iconRes: Int? = null,
+    iconSize: Dp = 34.dp,
+    iconTestTag: String? = null,
 ) {
     val shape = RoundedCornerShape(18.dp)
     Surface(
@@ -264,18 +286,45 @@ fun ProductsSecondaryOutlinedButton(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = text,
-                fontFamily = PlusJakartaSansFontFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (iconRes != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    val iconModifier = if (iconTestTag != null) Modifier.testTag(iconTestTag) else Modifier
+                    Mv3dIcon(
+                        iconRes = iconRes,
+                        contentDescription = null,
+                        size = iconSize,
+                        modifier = iconModifier,
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = text,
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = text,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

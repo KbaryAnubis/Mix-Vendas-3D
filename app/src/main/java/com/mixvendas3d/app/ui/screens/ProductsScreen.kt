@@ -342,11 +342,12 @@ private fun ProductsMainContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item(key = "products_actions_card") {
-            Box(
+        item(key = "products_main_content") {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 600.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 ProductsGlassCard {
                     Row(
@@ -384,12 +385,18 @@ private fun ProductsMainContent(
                             enabled = true,
                             onClick = onOpenNewProduct,
                             testTag = "new_product_button",
-                            iconRes = R.drawable.mv3d_produtos,
+                            iconRes = R.drawable.mv3d_novo_produto,
+                            iconSize = 48.dp,
+                            iconTestTag = "icon_mv3d_novo_produto",
                         )
-                        ProductsSecondaryOutlinedButton(
+                        ProductsPrimaryCtaButton(
                             text = "Categorias",
+                            enabled = true,
                             onClick = onOpenCategoryManager,
                             testTag = "manage_categories_button",
+                            iconRes = R.drawable.mv3d_categoria,
+                            iconSize = 48.dp,
+                            iconTestTag = "icon_mv3d_categoria_button",
                         )
                     }
 
@@ -398,15 +405,7 @@ private fun ProductsMainContent(
                         MissingPeopleWarningCard(onGoToNames = onGoToNames)
                     }
                 }
-            }
-        }
 
-        item(key = "products_registered_card") {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 600.dp),
-            ) {
                 ProductsGlassCard {
                     if (!productsState.feedbackMessage.isNullOrBlank()) {
                         ProductsFeedbackBanner(
@@ -946,6 +945,9 @@ private fun ProductEditorScreen(
                             enabled = !editor.isSaving,
                             onClick = onSave,
                             testTag = "save_product_button",
+                            iconRes = R.drawable.mv3d_check,
+                            iconSize = 38.dp,
+                            iconTestTag = "icon_mv3d_check_product",
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1023,13 +1025,14 @@ private fun CategoryManagementScreen(
                                 shape = RoundedCornerShape(14.dp),
                                 color = Color(0x66492075),
                                 border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.5f)),
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(52.dp),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Mv3dIcon(
-                                        iconRes = R.drawable.mv3d_produtos,
+                                        iconRes = R.drawable.mv3d_categoria,
                                         contentDescription = null,
-                                        size = 28.dp,
+                                        size = 44.dp,
+                                        modifier = Modifier.testTag("icon_mv3d_categoria_header"),
                                     )
                                 }
                             }
@@ -1057,6 +1060,9 @@ private fun CategoryManagementScreen(
                             enabled = true,
                             onClick = onOpenNewCategory,
                             testTag = "new_category_button",
+                            iconRes = R.drawable.mv3d_nova_categoria,
+                            iconSize = 42.dp,
+                            iconTestTag = "icon_mv3d_nova_categoria",
                         )
                     }
                 }
@@ -1170,10 +1176,15 @@ private fun CategoryTreeCard(
                 shape = RoundedCornerShape(12.dp),
                 color = Color(0x66492075),
                 border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.5f)),
-                modifier = Modifier.size(42.dp),
+                modifier = Modifier.size(46.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Mv3dIcon(iconRes = R.drawable.mv3d_produtos, contentDescription = null, size = 22.dp)
+                    Mv3dIcon(
+                        iconRes = R.drawable.mv3d_categoria,
+                        contentDescription = null,
+                        size = 38.dp,
+                        modifier = Modifier.testTag("icon_mv3d_categoria_card_${mainCategory.id}"),
+                    )
                 }
             }
 
@@ -1256,6 +1267,9 @@ private fun CategoryTreeCard(
             text = "+ Subcategoria",
             onClick = onAddSubcategory,
             testTag = "add_subcategory_button_${mainCategory.id}",
+            iconRes = R.drawable.mv3d_subcategoria,
+            iconSize = 34.dp,
+            iconTestTag = "icon_mv3d_subcategoria_${mainCategory.id}",
         )
     }
 }
@@ -1503,6 +1517,9 @@ private fun CreateEditCategoryScreen(
                             enabled = !editor.isSaving && nameInput.isNotBlank() && (!isSubcategory || selectedParentId != null),
                             onClick = onSave,
                             testTag = "save_category_button",
+                            iconRes = R.drawable.mv3d_check,
+                            iconSize = 38.dp,
+                            iconTestTag = "icon_mv3d_check_category",
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))

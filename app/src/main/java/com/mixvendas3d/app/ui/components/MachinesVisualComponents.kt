@@ -117,28 +117,37 @@ fun MachinesPrimaryCtaButton(
     testTag: String,
     modifier: Modifier = Modifier,
     leadingText: String? = null,
-    @DrawableRes iconRes: Int? = R.drawable.ic_products_save,
+    @DrawableRes iconRes: Int? = R.drawable.mv3d_check,
+    iconSize: Dp = 38.dp,
+    iconTestTag: String? = null,
 ) {
     val shape = RoundedCornerShape(18.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 54.dp)
+            .heightIn(min = 56.dp)
             .shadow(
-                elevation = 14.dp,
+                elevation = if (enabled) 14.dp else 4.dp,
                 shape = shape,
-                ambientColor = HomeCtaShadowGlow.copy(alpha = 0.70f),
-                spotColor = HomeCtaShadowGlow.copy(alpha = 0.85f),
+                ambientColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.70f else 0.20f),
+                spotColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.85f else 0.25f),
             )
             .clip(shape)
             .background(
                 Brush.horizontalGradient(
-                    listOf(HomeCtaGradientStart, HomeCtaGradientEnd),
+                    if (enabled) {
+                        listOf(HomeCtaGradientStart, HomeCtaGradientEnd)
+                    } else {
+                        listOf(
+                            HomeCtaGradientStart.copy(alpha = 0.45f),
+                            HomeCtaGradientEnd.copy(alpha = 0.45f),
+                        )
+                    },
                 ),
             )
             .border(
                 width = 1.5.dp,
-                color = HomeCtaBorderGlow.copy(alpha = 0.88f),
+                color = HomeCtaBorderGlow.copy(alpha = if (enabled) 0.88f else 0.35f),
                 shape = shape,
             )
             .clickable(
@@ -146,7 +155,7 @@ fun MachinesPrimaryCtaButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = 18.dp, vertical = 14.dp)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center,
     ) {
@@ -160,16 +169,27 @@ fun MachinesPrimaryCtaButton(
                     fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
-                    color = Color.White,
+                    color = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             } else if (iconRes != null) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
-                )
+                val iconModifier = if (iconTestTag != null) Modifier.testTag(iconTestTag) else Modifier
+                if (iconRes == R.drawable.mv3d_check || iconRes == R.drawable.mv3d_maquininhas) {
+                    Mv3dIcon(
+                        iconRes = iconRes,
+                        contentDescription = null,
+                        size = iconSize,
+                        alpha = if (enabled) 1f else 0.55f,
+                        modifier = iconModifier,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(id = iconRes),
+                        contentDescription = null,
+                        tint = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
+                        modifier = iconModifier.size(20.dp),
+                    )
+                }
                 Spacer(modifier = Modifier.width(10.dp))
             }
             Text(
@@ -177,7 +197,7 @@ fun MachinesPrimaryCtaButton(
                 fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

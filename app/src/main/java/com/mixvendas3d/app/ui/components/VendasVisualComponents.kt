@@ -1108,6 +1108,7 @@ fun VendasEmptyStateCard(
                 iconRes = R.drawable.mv3d_vendas,
                 contentDescription = null,
                 size = 64.dp,
+                modifier = Modifier.testTag("icon_mv3d_vendas_empty"),
             )
             Text(
                 text = stringResource(R.string.sales_empty_title),

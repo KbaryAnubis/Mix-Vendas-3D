@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -167,20 +165,27 @@ fun NamesPrimaryCtaButton(
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .shadow(
-                elevation = 14.dp,
+                elevation = if (enabled) 14.dp else 4.dp,
                 shape = shape,
-                ambientColor = HomeCtaShadowGlow.copy(alpha = 0.70f),
-                spotColor = HomeCtaShadowGlow.copy(alpha = 0.85f),
+                ambientColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.70f else 0.20f),
+                spotColor = HomeCtaShadowGlow.copy(alpha = if (enabled) 0.85f else 0.25f),
             )
             .clip(shape)
             .background(
                 Brush.horizontalGradient(
-                    listOf(HomeCtaGradientStart, HomeCtaGradientEnd),
+                    if (enabled) {
+                        listOf(HomeCtaGradientStart, HomeCtaGradientEnd)
+                    } else {
+                        listOf(
+                            HomeCtaGradientStart.copy(alpha = 0.45f),
+                            HomeCtaGradientEnd.copy(alpha = 0.45f),
+                        )
+                    },
                 ),
             )
             .border(
                 width = 1.5.dp,
-                color = HomeCtaBorderGlow.copy(alpha = 0.88f),
+                color = HomeCtaBorderGlow.copy(alpha = if (enabled) 0.88f else 0.35f),
                 shape = shape,
             )
             .clickable(
@@ -188,7 +193,7 @@ fun NamesPrimaryCtaButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = 20.dp, vertical = 15.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center,
     ) {
@@ -197,17 +202,19 @@ fun NamesPrimaryCtaButton(
             horizontalArrangement = Arrangement.Center,
         ) {
             if (isEditing) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
+                Mv3dIcon(
+                    iconRes = R.drawable.mv3d_check,
                     contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp),
+                    size = 38.dp,
+                    alpha = if (enabled) 1f else 0.55f,
+                    modifier = Modifier.testTag("icon_mv3d_check_person"),
                 )
             } else {
                 Mv3dIcon(
                     iconRes = R.drawable.mv3d_nomes,
                     contentDescription = null,
                     size = 36.dp,
+                    alpha = if (enabled) 1f else 0.55f,
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -216,7 +223,7 @@ fun NamesPrimaryCtaButton(
                 fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
-                color = Color.White,
+                color = if (enabled) Color.White else Color.White.copy(alpha = 0.65f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

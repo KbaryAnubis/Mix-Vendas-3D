@@ -333,25 +333,6 @@ fun VenderScreen(
                     }
                 }
 
-                // Seletor de data real da venda (padrão = hoje; personalizado quando ativado; em edição = data original)
-                VenderSaleDateSelectorCard(
-                    selectedDate = form.selectedSaleDate,
-                    customSaleDateEnabled = form.saleDateCustomized,
-                    isEditing = form.isEditing,
-                    originalSaleEpochMs = form.originalEditingSale?.soldAtEpochMs,
-                    onCustomSaleDateToggled = { enabled ->
-                        if (!enabled) {
-                            saleDatePickerOpen = false
-                        }
-                        onCustomSaleDateToggled(enabled)
-                    },
-                    onOpenPicker = {
-                        if (canOpenSaleDateCalendar) {
-                            saleDatePickerOpen = true
-                        }
-                    },
-                )
-
                 // Seção 1 — Produtos vendidos
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -572,7 +553,9 @@ fun VenderScreen(
                 }
 
                 // Card Observação (opcional)
-                VenderGlassCard {
+                VenderGlassCard(
+                    modifier = Modifier.testTag("sale_note_card"),
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -619,6 +602,25 @@ fun VenderScreen(
                             .testTag("sale_note_input"),
                     )
                 }
+
+                // Seletor de data real da venda — posicionado imediatamente abaixo de Observação
+                VenderSaleDateSelectorCard(
+                    selectedDate = form.selectedSaleDate,
+                    customSaleDateEnabled = form.saleDateCustomized,
+                    isEditing = form.isEditing,
+                    originalSaleEpochMs = form.originalEditingSale?.soldAtEpochMs,
+                    onCustomSaleDateToggled = { enabled ->
+                        if (!enabled) {
+                            saleDatePickerOpen = false
+                        }
+                        onCustomSaleDateToggled(enabled)
+                    },
+                    onOpenPicker = {
+                        if (canOpenSaleDateCalendar) {
+                            saleDatePickerOpen = true
+                        }
+                    },
+                )
 
                 // Seção 2 — Forma de pagamento
                 Column(
