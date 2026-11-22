@@ -112,8 +112,8 @@ class Wave2RegressionTest {
             "mais_item_types_products" to "screen_products",
             "mais_item_names" to "screen_names",
             "mais_item_machines" to "screen_machines",
-            "mais_item_import_export" to "screen_import_export",
-            "mais_item_update_system" to "screen_update_system",
+            "mais_item_import_export" to "screen_mais_detail_import_export",
+            "mais_item_update_system" to "screen_mais_detail_update_system",
         )
 
         targets.forEach { (itemTag, screenTag) ->
@@ -172,7 +172,7 @@ class Wave2RegressionTest {
         composeRule.onNodeWithTag("new_product_button").performClick()
         waitForTag("product_editor_dialog")
 
-        composeRule.onNodeWithTag("nav_tab_home").performClick()
+        composeRule.onNodeWithTag("nav_tab_inicio").performClick()
         waitForTag("screen_inicio")
 
         composeRule.onNodeWithTag("nav_tab_mais").performClick()
@@ -230,6 +230,8 @@ class Wave2RegressionTest {
         waitForTag("categories_feedback_banner")
 
         // 3. Editar subcategoria: tipo e categoria pai desabilitados + aviso de hierarquia + preserva parentId
+        composeRule.onNodeWithTag("category_management_scroll")
+            .performScrollToNode(hasTestTag("edit_category_$subId"))
         composeRule.onNodeWithTag("edit_category_$subId").performScrollTo().performClick()
         waitForTag("create_edit_category_dialog")
         composeRule.onNodeWithTag("radio_category_main").assertIsNotEnabled()
@@ -246,6 +248,8 @@ class Wave2RegressionTest {
         assertEquals(catId, renamedSub.parentId)
 
         // 4. Exclui a categoria principal que estava selecionada no filtro -> volta para Produtos com filtro resetado
+        composeRule.onNodeWithTag("category_management_scroll")
+            .performScrollToNode(hasTestTag("delete_category_$catId"))
         composeRule.onNodeWithTag("delete_category_$catId").performScrollTo().performClick()
         waitForTag("confirm_delete_category_button")
         composeRule.onNodeWithTag("confirm_delete_category_button").performClick()
@@ -328,15 +332,15 @@ class Wave2RegressionTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("discount_target_dropdown").performClick()
-        waitForTag("discount_target_$prodBId")
-        composeRule.onNodeWithTag("discount_target_$prodBId").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Aplicar somente em Suporte Controle").performClick()
         composeRule.waitForIdle()
 
-        // 4. Alterar quantidade de um produto mantém recálculo coerente
+        // 4. Alterar quantidade de um produto mantém recálculo coerente (preserva desconto de R$ 10,00)
         composeRule.onNodeWithTag("selected_inc_$prodAId").performScrollTo().performClick()
         composeRule.waitForIdle()
-        // Novo subtotal = 2*40 + 60 = 140,00; valor final editado 90,00 continua válido (desconto 50,00)
-        composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().assert(hasText("90,00"))
+        // Novo subtotal = 2*40 + 60 = 140,00; desconto de R$ 10,00 mantido => valor final = 130,00
+        composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().assert(hasText("130,00"))
 
         // 5. Registrar venda com sucesso
         composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
@@ -348,8 +352,8 @@ class Wave2RegressionTest {
         }
         val saved = runBlocking(Dispatchers.IO) { app.saleRepository.observeSales().first().single() }
         assertEquals(14_000L, saved.calculation.originalSubtotal.rawCents)
-        assertEquals(9_000L, saved.calculation.finalAmount.rawCents)
-        assertEquals(5_000L, saved.calculation.discountTotal.rawCents)
+        assertEquals(13_000L, saved.calculation.finalAmount.rawCents)
+        assertEquals(1_000L, saved.calculation.discountTotal.rawCents)
     }
 
     @Test

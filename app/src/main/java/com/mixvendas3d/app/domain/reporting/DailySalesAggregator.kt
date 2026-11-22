@@ -8,6 +8,7 @@ import java.time.LocalDate
 import java.time.Month
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZoneOffset
 
 data class RealDaySalesSummary(
     val date: LocalDate,
@@ -50,6 +51,45 @@ object DailySalesAggregator {
         return Instant.ofEpochMilli(soldAtEpochMs)
             .atZone(zoneId)
             .toLocalDate()
+    }
+
+    /**
+     * Combina a data local escolhida ([saleDate]) com o horário local de [referenceEpochMs]
+     * no fuso horário [zoneId]. Se [saleDate] já coincidir com a data local de [referenceEpochMs],
+     * devolve [referenceEpochMs] intacto para preservar exatamente o instante original.
+     */
+    fun combineLocalDateWithTimeOf(
+        saleDate: LocalDate,
+        referenceEpochMs: Long,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): Long {
+        val referenceZoned = Instant.ofEpochMilli(referenceEpochMs).atZone(zoneId)
+        if (referenceZoned.toLocalDate() == saleDate) {
+            return referenceEpochMs
+        }
+        return saleDate
+            .atTime(referenceZoned.toLocalTime())
+            .atZone(zoneId)
+            .toInstant()
+            .toEpochMilli()
+    }
+
+    /**
+     * Converte o timestamp UTC de meia-noite devolvido pelo DatePicker do Material 3
+     * para a [LocalDate] exata, evitando deslocamento por fuso horário local.
+     */
+    fun utcDatePickerMillisToLocalDate(utcMidnightMillis: Long): LocalDate {
+        return Instant.ofEpochMilli(utcMidnightMillis)
+            .atZone(ZoneOffset.UTC)
+            .toLocalDate()
+    }
+
+    /**
+     * Converte uma [LocalDate] para o timestamp UTC de meia-noite esperado pelo
+     * DatePicker do Material 3.
+     */
+    fun localDateToUtcDatePickerMillis(date: LocalDate): Long {
+        return date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
     }
 
     /**

@@ -182,6 +182,7 @@ fun MixVendasAppShell(
                                     }
                                 },
                                 onBrandKeySelected = viewModel::onBrandKeySelected,
+                                onSaleDateSelected = viewModel::onSaleDateSelected,
                             )
                         }
                     }

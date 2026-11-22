@@ -431,7 +431,9 @@ fun VendasSaleHeroCard(
                         color = Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("sale_history_date_${sale.id}"),
                     )
                 }
 
@@ -624,6 +626,57 @@ fun VendasSaleHeroCard(
                 }
 
                 if (detailsExpanded) {
+                    val receiptDateText = remember(sale.soldAtEpochMs) {
+                        CurrencyFormatter.formatDateOfEpochMillis(sale.soldAtEpochMs)
+                    }
+                    val receiptTimeText = remember(sale.soldAtEpochMs) {
+                        CurrencyFormatter.formatTimeOfEpochMillis(sale.soldAtEpochMs)
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("sale_receipt_summary_${sale.id}"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = GlassInnerBoxBg,
+                        border = BorderStroke(1.dp, GlassNeonBorder15),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.sales_receipt_title),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = V19PurpleSoftText,
+                            )
+                            VendasKeyValueRow(
+                                label = "Data da venda",
+                                value = receiptDateText,
+                                labelColor = HomeCardLabelInk,
+                                valueColor = Color.White,
+                                valueWeight = FontWeight.Bold,
+                            )
+                            VendasKeyValueRow(
+                                label = "Horário",
+                                value = receiptTimeText,
+                                labelColor = HomeCardLabelInk,
+                                valueColor = Color.White,
+                                valueWeight = FontWeight.SemiBold,
+                            )
+                            VendasKeyValueRow(
+                                label = "Valor final",
+                                value = CurrencyFormatter.formatBrl(calc.finalAmount),
+                                labelColor = HomeCardLabelInk,
+                                valueColor = V19GoldAccent,
+                                valueWeight = FontWeight.ExtraBold,
+                            )
+                        }
+                    }
+
                     calc.items.forEach { item ->
                         VendasProductDetailCard(
                             saleId = sale.id,

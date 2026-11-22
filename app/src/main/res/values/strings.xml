@@ -147,6 +147,12 @@
     <string name="sales_delete_cancel_action">Cancelar</string>
     <string name="sales_delete_confirm_action">Excluir venda</string>
     <string name="sales_delete_in_progress">Excluindo...</string>
+    <string name="sell_date_label">Data da venda</string>
+    <string name="sell_date_change_action">Alterar</string>
+    <string name="sell_date_picker_title">Selecionar data da venda</string>
+    <string name="sell_date_picker_confirm">Confirmar</string>
+    <string name="sell_date_picker_cancel">Cancelar</string>
+    <string name="sales_receipt_title">Comprovante da venda</string>
 
     <!-- Tela Fechamento -->
     <string name="closing_title">Fechamento</string>
@@ -174,6 +180,7 @@
     <string name="closing_export_csv_dialog_subtitle">Selecione o formato de planilha compatível com Excel para o período atual do fechamento:</string>
     <string name="closing_export_csv_cancel">Cancelar</string>
     <string name="closing_export_csv_continue">Continuar</string>
+    <string name="closing_daily_sales_title">Resumo por dia</string>
     <string name="closing_export_csv_note">Exporta somente as vendas reais do período selecionado em Fechamento no formato CSV compatível com Excel.</string>
 
     <!-- Tela Mais -->

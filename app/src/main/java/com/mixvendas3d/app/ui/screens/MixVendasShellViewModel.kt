@@ -146,6 +146,8 @@ data class VenderFormUiState(
     val feedbackMessage: String? = null,
     val feedbackIsError: Boolean = false,
     val selectedBrandKey: String = CardBrand.VISA.storageKey,
+    val selectedSaleDate: LocalDate = LocalDate.now(),
+    val saleDateCustomized: Boolean = false,
 ) {
     val isEditing: Boolean
         get() = editingSaleId != null
@@ -224,6 +226,7 @@ data class MixVendasShellUiState(
     val closingRealPersonSummaries: List<SalePersonTotalSnapshot> = emptyList(),
     val closingRealPaymentBreakdowns: List<RealPaymentMethodBreakdown> = emptyList(),
     val closingRealMachineBreakdowns: List<RealMachineBreakdown> = emptyList(),
+    val closingDailyReport: RealDailySalesReport = RealDailySalesReport(),
     // Estados 100% reais da aba VENDAS (Etapa 3B-2A+)
     val realSalesCount: Int = 0,
     val filteredRealSales: List<PersistedSale> = emptyList(),
@@ -899,6 +902,7 @@ class MixVendasShellViewModel(
 
             val resolvedEditBrandKey = snap?.resolvedAppliedBrandKey ?: CardBrand.VISA.storageKey
             val resolvedEditBrand = CardBrand.fromStorageKey(resolvedEditBrandKey) ?: CardBrand.VISA
+            val originalSaleDate = DailySalesAggregator.toLocalDate(loadedSale.soldAtEpochMs, ZoneId.systemDefault())
 
             val initialEditForm = VenderFormUiState(
                 editingSaleId = loadedSale.id,
@@ -928,6 +932,8 @@ class MixVendasShellViewModel(
                 feedbackMessage = null,
                 feedbackIsError = false,
                 selectedBrandKey = resolvedEditBrandKey,
+                selectedSaleDate = originalSaleDate,
+                saleDateCustomized = false,
             )
 
             venderFormFlow.value = syncForm(
@@ -939,9 +945,28 @@ class MixVendasShellViewModel(
         }
     }
 
+    fun onSaleDateSelected(date: LocalDate) {
+        val current = venderFormFlow.value
+        val originalDate = current.originalEditingSale?.let {
+            DailySalesAggregator.toLocalDate(it.soldAtEpochMs, ZoneId.systemDefault())
+        }
+        venderFormFlow.value = current.copy(
+            selectedSaleDate = date,
+            saleDateCustomized = if (current.isEditing) {
+                originalDate != null && date != originalDate
+            } else {
+                true
+            },
+            feedbackMessage = null,
+            feedbackIsError = false,
+        )
+    }
+
     fun hasUnsavedEditChanges(): Boolean {
         val form = venderFormFlow.value
         val original = form.originalEditingSale ?: return false
+        val originalDate = DailySalesAggregator.toLocalDate(original.soldAtEpochMs, ZoneId.systemDefault())
+        if (form.selectedSaleDate != originalDate) return true
         if (!isNoteOnlyOrNoFinancialChange(form, original)) return true
         return form.note.trim() != original.calculation.note.trim()
     }
@@ -972,6 +997,8 @@ class MixVendasShellViewModel(
         isSavingLock.set(false)
         venderFormFlow.value = VenderFormUiState(
             selectedMethod = PreviewPaymentMethod.PIX,
+            selectedSaleDate = LocalDate.now(),
+            saleDateCustomized = false,
         )
     }
 
@@ -1213,23 +1240,45 @@ class MixVendasShellViewModel(
                     }
 
                     verifyPreSaveInvariants(calculationResult)
+                    val zoneId = ZoneId.systemDefault()
                     withContext(Dispatchers.IO) {
                         if (editingId != null) {
-                            saleRepository.updateSale(editingId, calculationResult)
+                            val originalDate = originalSale?.let {
+                                DailySalesAggregator.toLocalDate(it.soldAtEpochMs, zoneId)
+                            }
+                            if (originalDate != null && currentForm.selectedSaleDate != originalDate) {
+                                saleRepository.updateSale(
+                                    saleId = editingId,
+                                    result = calculationResult,
+                                    saleDate = currentForm.selectedSaleDate,
+                                    zoneId = zoneId,
+                                )
+                            } else {
+                                saleRepository.updateSale(editingId, calculationResult)
+                            }
+                        } else if (currentForm.saleDateCustomized) {
+                            saleRepository.saveSale(
+                                result = calculationResult,
+                                saleDate = currentForm.selectedSaleDate,
+                                zoneId = zoneId,
+                            )
                         } else {
                             saleRepository.saveSale(calculationResult)
                         }
                     }
                 }
 
-                // Sucesso: sai do modo edição, limpa o formulário e exibe confirmação explícita
+                // Sucesso: sai do modo edição, limpa o formulário e exibe confirmação explícita com data/hora e valor
+                val formattedDateTime = CurrencyFormatter.formatEpochMillis(persisted.soldAtEpochMs)
                 val successMsg = if (editingId != null) {
-                    "Alterações salvas com sucesso (${CurrencyFormatter.formatBrl(persisted.calculation.finalAmount)})."
+                    "Alterações salvas com sucesso (${CurrencyFormatter.formatBrl(persisted.calculation.finalAmount)} · $formattedDateTime)."
                 } else {
-                    "Venda registrada com sucesso (${CurrencyFormatter.formatBrl(persisted.calculation.finalAmount)})."
+                    "Venda registrada com sucesso (${CurrencyFormatter.formatBrl(persisted.calculation.finalAmount)} · $formattedDateTime)."
                 }
                 venderFormFlow.value = VenderFormUiState(
                     selectedMethod = PreviewPaymentMethod.PIX,
+                    selectedSaleDate = LocalDate.now(),
+                    saleDateCustomized = false,
                     isSaving = false,
                     feedbackMessage = successMsg,
                     feedbackIsError = false,
@@ -1854,6 +1903,7 @@ class MixVendasShellViewModel(
         }
 
         val closingRealMachineBreakdowns = buildRealMachineBreakdowns(filteredClosingReal)
+        val closingDailyReport = DailySalesAggregator.aggregate(filteredClosingReal, zoneId)
 
         // 3. Consulta 100% real do Room para a aba VENDAS (sem mistura com PreviewFixtures)
         val filteredReal = filterRealSales(realSales, filter)
@@ -1949,6 +1999,7 @@ class MixVendasShellViewModel(
             closingRealPersonSummaries = closingRealPersonSummaries,
             closingRealPaymentBreakdowns = closingRealPaymentBreakdowns,
             closingRealMachineBreakdowns = closingRealMachineBreakdowns,
+            closingDailyReport = closingDailyReport,
             realSalesCount = realSales.size,
             filteredRealSales = filteredReal,
             realTotalGross = MoneyCents(realGrossCents),

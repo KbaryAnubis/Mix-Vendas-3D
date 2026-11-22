@@ -1179,51 +1179,51 @@ private fun MachineEditorContent(
                     }
 
                     item(key = "editor_custom_brands_add") {
-                        CustomBrandAddCard(
-                            creditEnabled = editor.creditEnabled,
-                            newNameInput = editor.newCustomBrandNameInput,
-                            newCreditRateInput = editor.newCustomBrandCreditRateInput,
-                            newDebitRateInput = editor.newCustomBrandDebitRateInput,
-                            onNewNameChanged = onNewCustomBrandNameChanged,
-                            onNewCreditRateChanged = onNewCustomBrandCreditRateChanged,
-                            onNewDebitRateChanged = onNewCustomBrandDebitRateChanged,
-                            onAddCustomBrand = onAddCustomBrand,
-                        )
-                    }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CustomBrandAddCard(
+                                creditEnabled = editor.creditEnabled,
+                                newNameInput = editor.newCustomBrandNameInput,
+                                newCreditRateInput = editor.newCustomBrandCreditRateInput,
+                                newDebitRateInput = editor.newCustomBrandDebitRateInput,
+                                onNewNameChanged = onNewCustomBrandNameChanged,
+                                onNewCreditRateChanged = onNewCustomBrandCreditRateChanged,
+                                onNewDebitRateChanged = onNewCustomBrandDebitRateChanged,
+                                onAddCustomBrand = onAddCustomBrand,
+                            )
 
-                    if (!editor.customBrandErrorMessage.isNullOrBlank()) {
-                        item(key = "editor_custom_brands_error") {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("custom_brand_error_banner"),
-                                shape = RoundedCornerShape(14.dp),
-                                color = V19ErrorContainer,
-                                border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
-                            ) {
-                                Text(
-                                    text = editor.customBrandErrorMessage,
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp,
-                                    color = V19ErrorSoft,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            if (!editor.customBrandErrorMessage.isNullOrBlank()) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("custom_brand_error_banner"),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = V19ErrorContainer,
+                                    border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
+                                ) {
+                                    Text(
+                                        text = editor.customBrandErrorMessage,
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp,
+                                        color = V19ErrorSoft,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+
+                            editor.customBrandDrafts.forEach { customItem ->
+                                CustomBrandItemCard(
+                                    item = customItem,
+                                    creditEnabled = editor.creditEnabled,
+                                    onCustomDebitRateChanged = onCustomBrandDebitRateChanged,
+                                    onCustomCreditRateChanged = onCustomBrandCreditRateChanged,
+                                    onRemoveCustomBrand = onRemoveCustomBrand,
                                 )
                             }
                         }
-                    }
-
-                    items(
-                        items = editor.customBrandDrafts,
-                        key = { "custom_brand_${it.localId}" },
-                    ) { customItem ->
-                        CustomBrandItemCard(
-                            item = customItem,
-                            creditEnabled = editor.creditEnabled,
-                            onCustomDebitRateChanged = onCustomBrandDebitRateChanged,
-                            onCustomCreditRateChanged = onCustomBrandCreditRateChanged,
-                            onRemoveCustomBrand = onRemoveCustomBrand,
-                        )
                     }
                 }
             }

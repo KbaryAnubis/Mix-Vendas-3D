@@ -2,6 +2,7 @@ package com.mixvendas3d.app.util
 
 import com.mixvendas3d.app.domain.models.MoneyCents
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -11,6 +12,10 @@ object CurrencyFormatter {
     private val ptBrLocale: Locale = Locale.forLanguageTag("pt-BR")
     private val timestampFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss", ptBrLocale)
+    private val dateOnlyFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBrLocale)
+    private val timeOnlyFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("HH:mm:ss", ptBrLocale)
 
     fun formatBrl(amount: MoneyCents): String {
         val raw = amount.rawCents
@@ -93,5 +98,27 @@ object CurrencyFormatter {
         return Instant.ofEpochMilli(epochMillis)
             .atZone(ZoneId.systemDefault())
             .format(timestampFormatter)
+    }
+
+    fun formatLocalDate(date: LocalDate): String {
+        return date.format(dateOnlyFormatter)
+    }
+
+    fun formatDateOfEpochMillis(
+        epochMillis: Long,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): String {
+        return Instant.ofEpochMilli(epochMillis)
+            .atZone(zoneId)
+            .format(dateOnlyFormatter)
+    }
+
+    fun formatTimeOfEpochMillis(
+        epochMillis: Long,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): String {
+        return Instant.ofEpochMilli(epochMillis)
+            .atZone(zoneId)
+            .format(timeOnlyFormatter)
     }
 }

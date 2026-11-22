@@ -7,6 +7,7 @@ import com.mixvendas3d.app.domain.calculation.SalePersistenceException
 import com.mixvendas3d.app.domain.calculation.SalePersistenceValidator
 import com.mixvendas3d.app.domain.models.PersistedSale
 import com.mixvendas3d.app.domain.models.SaleCalculationResult
+import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -25,7 +26,20 @@ interface SaleRepository {
     fun observeSaleById(saleId: String): Flow<PersistedSale?>
     suspend fun getSaleById(saleId: String): PersistedSale?
     suspend fun saveSale(result: SaleCalculationResult): PersistedSale
+    suspend fun saveSale(
+        result: SaleCalculationResult,
+        saleDate: LocalDate?,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): PersistedSale = saveSale(result)
+
     suspend fun updateSale(saleId: String, result: SaleCalculationResult): PersistedSale
+    suspend fun updateSale(
+        saleId: String,
+        result: SaleCalculationResult,
+        saleDate: LocalDate?,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): PersistedSale = updateSale(saleId, result)
+
     suspend fun deleteSale(saleId: String)
 }
 
@@ -82,15 +96,36 @@ class RoomSaleRepository(
     }
 
     override suspend fun saveSale(result: SaleCalculationResult): PersistedSale {
+        return saveSale(result = result, saleDate = null, zoneId = ZoneId.systemDefault())
+    }
+
+    override suspend fun saveSale(
+        result: SaleCalculationResult,
+        saleDate: LocalDate?,
+        zoneId: ZoneId,
+    ): PersistedSale {
         // Validação estrita antes de abrir transação no banco
         SalePersistenceValidator.validateForPersistence(result)
 
         val saleId = idGenerator()
         val now = clockMillis()
+        val resolvedSoldAt = if (saleDate != null) {
+            DailySalesAggregator.combineLocalDateWithTimeOf(
+                saleDate = saleDate,
+                referenceEpochMs = now,
+                zoneId = zoneId,
+            )
+        } else {
+            now
+        }
+        if (resolvedSoldAt < 0L) {
+            throw SalePersistenceException("Data da venda inválida.")
+        }
+        val resolvedUpdatedAt = maxOf(now, resolvedSoldAt)
         val mapped = SaleEntityMapper.toEntities(
             saleId = saleId,
-            soldAtEpochMs = now,
-            updatedAtEpochMs = now,
+            soldAtEpochMs = resolvedSoldAt,
+            updatedAtEpochMs = resolvedUpdatedAt,
             result = result,
             itemIdGenerator = idGenerator,
         )
@@ -108,6 +143,15 @@ class RoomSaleRepository(
     }
 
     override suspend fun updateSale(saleId: String, result: SaleCalculationResult): PersistedSale {
+        return updateSale(saleId = saleId, result = result, saleDate = null, zoneId = ZoneId.systemDefault())
+    }
+
+    override suspend fun updateSale(
+        saleId: String,
+        result: SaleCalculationResult,
+        saleDate: LocalDate?,
+        zoneId: ZoneId,
+    ): PersistedSale {
         if (saleId.isBlank()) {
             throw SalePersistenceException("Identificador da venda para atualização inválido.")
         }
@@ -118,10 +162,23 @@ class RoomSaleRepository(
             val existingHeader = saleDao.getSaleHeaderById(saleId)
                 ?: throw SalePersistenceException("Venda não encontrada para atualização.")
 
-            val updatedAt = maxOf(clockMillis(), existingHeader.soldAtEpochMs)
+            val resolvedSoldAt = if (saleDate != null) {
+                DailySalesAggregator.combineLocalDateWithTimeOf(
+                    saleDate = saleDate,
+                    referenceEpochMs = existingHeader.soldAtEpochMs,
+                    zoneId = zoneId,
+                )
+            } else {
+                existingHeader.soldAtEpochMs
+            }
+            if (resolvedSoldAt < 0L) {
+                throw SalePersistenceException("Data da venda inválida.")
+            }
+
+            val updatedAt = maxOf(clockMillis(), resolvedSoldAt)
             val mapped = SaleEntityMapper.toEntities(
                 saleId = existingHeader.id,
-                soldAtEpochMs = existingHeader.soldAtEpochMs,
+                soldAtEpochMs = resolvedSoldAt,
                 updatedAtEpochMs = updatedAt,
                 result = result,
                 itemIdGenerator = idGenerator,

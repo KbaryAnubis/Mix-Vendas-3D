@@ -36,8 +36,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,10 +51,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +87,8 @@ import com.mixvendas3d.app.domain.models.MoneyCents
 import com.mixvendas3d.app.domain.models.PreviewPaymentMethod
 import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
+import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
+import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
 import com.mixvendas3d.app.ui.components.PickerCategoryHeader
 import com.mixvendas3d.app.ui.components.PickerSubcategoryHeader
 import com.mixvendas3d.app.ui.components.Mv3dIcon
@@ -118,6 +126,8 @@ import com.mixvendas3d.app.ui.theme.V19SurfaceCard
 import com.mixvendas3d.app.util.CurrencyFormatter
 import com.mixvendas3d.app.util.RateFormatter
 import java.text.Normalizer
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 
 private val MACHINE_DIACRITICS_REGEX = "\\p{M}+".toRegex()
@@ -158,8 +168,10 @@ fun VenderScreen(
     onBrandKeySelected: (String) -> Unit = { key ->
         CardBrand.fromStorageKey(key)?.let(onBrandSelected)
     },
+    onSaleDateSelected: (LocalDate) -> Unit = {},
 ) {
     val form = uiState.venderForm
+    var saleDatePickerOpen by rememberSaveable { mutableStateOf(false) }
     val activeCatalogMap = remember(uiState.activeCatalogProducts) {
         uiState.activeCatalogProducts.associateBy { it.id }
     }
@@ -290,8 +302,18 @@ fun VenderScreen(
                                 }
                             }
                             if (originalSale != null) {
+                                val originalDate = DailySalesAggregator.toLocalDate(
+                                    originalSale.soldAtEpochMs,
+                                    ZoneId.systemDefault(),
+                                )
+                                val editDateLine = if (form.selectedSaleDate == originalDate) {
+                                    "Data original preservada: ${CurrencyFormatter.formatEpochMillis(originalSale.soldAtEpochMs)}"
+                                } else {
+                                    "Nova data: ${CurrencyFormatter.formatLocalDate(form.selectedSaleDate)} · " +
+                                        "horário original preservado (${CurrencyFormatter.formatTimeOfEpochMillis(originalSale.soldAtEpochMs)})"
+                                }
                                 Text(
-                                    text = "Data original preservada: ${CurrencyFormatter.formatEpochMillis(originalSale.soldAtEpochMs)}",
+                                    text = editDateLine,
                                     fontFamily = PlusJakartaSansFontFamily,
                                     fontSize = 12.sp,
                                     color = V19PurpleSoftText,
@@ -300,6 +322,14 @@ fun VenderScreen(
                         }
                     }
                 }
+
+                // Seletor de data real da venda (padrão = hoje; em edição = data original)
+                VenderSaleDateSelectorCard(
+                    selectedDate = form.selectedSaleDate,
+                    isEditing = form.isEditing,
+                    originalSaleEpochMs = form.originalEditingSale?.soldAtEpochMs,
+                    onOpenPicker = { saleDatePickerOpen = true },
+                )
 
                 // Seção 1 — Produtos vendidos
                 Column(
@@ -777,6 +807,275 @@ fun VenderScreen(
                 }
             },
         )
+    }
+
+    if (saleDatePickerOpen) {
+        val originalSaleDate = form.originalEditingSale?.let {
+            DailySalesAggregator.toLocalDate(it.soldAtEpochMs, ZoneId.systemDefault())
+        }
+        SaleDatePickerModal(
+            selectedDate = form.selectedSaleDate,
+            originalDate = originalSaleDate,
+            onDateSelected = { pickedDate ->
+                saleDatePickerOpen = false
+                onSaleDateSelected(pickedDate)
+            },
+            onDismiss = { saleDatePickerOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun VenderSaleDateSelectorCard(
+    selectedDate: LocalDate,
+    isEditing: Boolean,
+    originalSaleEpochMs: Long?,
+    onOpenPicker: () -> Unit,
+) {
+    val zoneId = ZoneId.systemDefault()
+    val today = LocalDate.now(zoneId)
+    val originalDate = originalSaleEpochMs?.let { DailySalesAggregator.toLocalDate(it, zoneId) }
+    val formattedDate = CurrencyFormatter.formatLocalDate(selectedDate)
+
+    val helperText = when {
+        isEditing && originalDate != null && selectedDate != originalDate ->
+            "Data alterada · horário original (${CurrencyFormatter.formatTimeOfEpochMillis(originalSaleEpochMs)}) preservado"
+        isEditing && originalSaleEpochMs != null ->
+            "Data original da venda · horário ${CurrencyFormatter.formatTimeOfEpochMillis(originalSaleEpochMs)}"
+        selectedDate == today ->
+            "Hoje · salva com o horário atual"
+        selectedDate.isBefore(today) ->
+            "Data anterior selecionada · salva com o horário atual"
+        else ->
+            "Data selecionada · salva com o horário atual"
+    }
+
+    VenderGlassCard(
+        modifier = Modifier.testTag("sale_date_card"),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Mv3dIcon(
+                iconRes = R.drawable.mv3d_calendario,
+                contentDescription = null,
+                size = 38.dp,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.sell_date_label),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = V19PurpleSoftText,
+                )
+                Text(
+                    text = formattedDate,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = Color.White,
+                    modifier = Modifier.testTag("sale_date_value_text"),
+                )
+                Text(
+                    text = helperText,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = if (isEditing && originalDate != null && selectedDate != originalDate) {
+                        V19GoldAccent
+                    } else {
+                        HomeCardLabelInk.copy(alpha = 0.85f)
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            OutlinedButton(
+                onClick = onOpenPicker,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.1.dp, HomeCardNeonBorder.copy(alpha = 0.72f)),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("sale_date_selector_button"),
+            ) {
+                Text(
+                    text = stringResource(R.string.sell_date_change_action),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SaleDatePickerModal(
+    selectedDate: LocalDate,
+    originalDate: LocalDate?,
+    onDateSelected: (LocalDate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val today = LocalDate.now(ZoneId.systemDefault())
+    val yesterday = today.minusDays(1)
+    val initialUtcMillis = remember(selectedDate) {
+        DailySalesAggregator.localDateToUtcDatePickerMillis(selectedDate)
+    }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialUtcMillis,
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        colors = DatePickerDefaults.colors(
+            containerColor = V19SurfaceCard,
+        ),
+        modifier = Modifier.testTag("sale_date_picker_dialog"),
+        confirmButton = {
+            Button(
+                onClick = {
+                    val millis = datePickerState.selectedDateMillis
+                    val resolved = if (millis != null) {
+                        DailySalesAggregator.utcDatePickerMillisToLocalDate(millis)
+                    } else {
+                        selectedDate
+                    }
+                    onDateSelected(resolved)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = V19PurplePrimary,
+                    contentColor = Color.White,
+                ),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("sale_date_picker_confirm"),
+            ) {
+                Text(
+                    text = stringResource(R.string.sell_date_picker_confirm),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("sale_date_picker_cancel"),
+            ) {
+                Text(
+                    text = stringResource(R.string.sell_date_picker_cancel),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    color = V19PurpleSoftText,
+                )
+            }
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = { onDateSelected(today) },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.65f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("sale_date_quick_today"),
+                ) {
+                    Text(
+                        text = "Hoje",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Color.White,
+                    )
+                }
+                OutlinedButton(
+                    onClick = { onDateSelected(yesterday) },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.65f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("sale_date_quick_yesterday"),
+                ) {
+                    Text(
+                        text = "Ontem",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Color.White,
+                    )
+                }
+                if (originalDate != null && originalDate != selectedDate) {
+                    OutlinedButton(
+                        onClick = { onDateSelected(originalDate) },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, V19GoldAccent.copy(alpha = 0.70f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("sale_date_quick_original"),
+                    ) {
+                        Text(
+                            text = "Original",
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = V19GoldAccent,
+                        )
+                    }
+                }
+            }
+
+            DatePicker(
+                state = datePickerState,
+                title = {
+                    Text(
+                        text = stringResource(R.string.sell_date_picker_title),
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = V19PurpleSoftText,
+                        modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
+                    )
+                },
+                colors = DatePickerDefaults.colors(
+                    containerColor = V19SurfaceCard,
+                    titleContentColor = V19PurpleSoftText,
+                    headlineContentColor = Color.White,
+                    weekdayContentColor = V19InkMuted,
+                    subheadContentColor = V19PurpleSoftText,
+                    navigationContentColor = Color.White,
+                    yearContentColor = Color.White,
+                    currentYearContentColor = V19GoldAccent,
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = V19PurplePrimary,
+                    dayContentColor = Color.White,
+                    selectedDayContentColor = Color.White,
+                    selectedDayContainerColor = V19PurplePrimary,
+                    todayContentColor = V19GoldAccent,
+                    todayDateBorderColor = V19GoldAccent,
+                ),
+            )
+        }
     }
 }
 
