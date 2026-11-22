@@ -2,6 +2,7 @@ package com.mixvendas3d.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,13 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,9 +45,11 @@ import com.mixvendas3d.app.ui.components.NamesGlassCard
 import com.mixvendas3d.app.ui.components.NamesPersonAvatarBadge
 import com.mixvendas3d.app.ui.components.NamesPersonRow
 import com.mixvendas3d.app.ui.components.NamesPrimaryCtaButton
+import com.mixvendas3d.app.ui.components.UppercaseOutlinedTextField
 import com.mixvendas3d.app.ui.components.namesDarkInputColors
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
+import com.mixvendas3d.app.ui.theme.HomeCardGlassBottom
 import com.mixvendas3d.app.ui.theme.HomeCardLabelInk
 import com.mixvendas3d.app.ui.theme.HomeCardNeonBorder
 import com.mixvendas3d.app.ui.theme.HomeCardSubtleDivider
@@ -122,7 +125,7 @@ fun NamesScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
+                    UppercaseOutlinedTextField(
                         value = uiState.nameInput,
                         onValueChange = onNameInputChanged,
                         singleLine = true,
@@ -287,8 +290,29 @@ fun NamesScreen(
                                 )
                             }
                         }
-                    } else {
-                        uiState.people.forEachIndexed { index, item ->
+                    }
+                }
+            }
+        }
+
+        if (uiState.people.isNotEmpty()) {
+            itemsIndexed(
+                items = uiState.people,
+                key = { _, item -> item.person.id },
+            ) { index, item ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 600.dp)
+                        .padding(top = 10.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = HomeCardGlassBottom,
+                        border = BorderStroke(1.dp, GlassNeonBorder15),
+                    ) {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             NamesPersonRow(
                                 item = item,
                                 onEdit = { onStartEdit(item) },
@@ -301,9 +325,6 @@ fun NamesScreen(
                                     }
                                 },
                             )
-                            if (index < uiState.people.lastIndex) {
-                                HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.25f))
-                            }
                         }
                     }
                 }
@@ -315,6 +336,7 @@ fun NamesScreen(
         AlertDialog(
             onDismissRequest = { pendingDeleteTarget = null },
             containerColor = V19SurfaceCard,
+            modifier = Modifier.testTag("delete_person_dialog"),
             title = {
                 Text(
                     text = "Excluir pessoa?",
@@ -323,7 +345,7 @@ fun NamesScreen(
             },
             text = {
                 Text(
-                    text = "Deseja excluir \"${target.person.name}\" do cadastro local? Esta ação não pode ser desfeita.",
+                    text = "Deseja excluir \"${target.person.name}\" do cadastro local? Esta ação não pode ser desfeita. O histórico de vendas já registradas permanece preservado.",
                     color = V19InkMuted,
                 )
             },

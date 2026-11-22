@@ -2,6 +2,7 @@ package com.mixvendas3d.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -66,9 +69,12 @@ import com.mixvendas3d.app.ui.components.ProductsPrimaryCtaButton
 import com.mixvendas3d.app.ui.components.ProductsRegisteredRow
 import com.mixvendas3d.app.ui.components.ProductsSecondaryOutlinedButton
 import com.mixvendas3d.app.ui.components.ProductsSectionHeading
+import com.mixvendas3d.app.ui.components.UppercaseOutlinedTextField
 import com.mixvendas3d.app.ui.components.namesDarkInputColors
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
+import com.mixvendas3d.app.ui.theme.HomeCardGlassBottom
+import com.mixvendas3d.app.ui.theme.HomeCardGlassTop
 import com.mixvendas3d.app.ui.theme.HomeCardLabelInk
 import com.mixvendas3d.app.ui.theme.HomeCardNeonBorder
 import com.mixvendas3d.app.ui.theme.HomeCardSubtleDivider
@@ -189,6 +195,7 @@ fun ProductsScreen(
         productsState.categoryManagerOpen -> {
             CategoryManagementScreen(
                 categories = productsState.categories,
+                products = productsState.products,
                 feedbackMessage = productsState.feedbackMessage,
                 feedbackIsError = productsState.feedbackIsError,
                 onOpenNewCategory = onOpenNewCategoryEditor,
@@ -317,13 +324,16 @@ private fun ProductsMainContent(
     val people = uiState.names.people
     val listState = rememberLazyListState()
 
-    val categoryFilteredProducts = remember(filteredProducts, selectedCategoryFilterId, productsState.categories) {
+    val categoriesById = remember(productsState.categories) {
+        productsState.categories.associateBy { it.id }
+    }
+    val categoryFilteredProducts = remember(filteredProducts, selectedCategoryFilterId, productsState.categories, categoriesById) {
         if (selectedCategoryFilterId == null) {
             filteredProducts
         } else if (selectedCategoryFilterId == "uncategorized") {
             filteredProducts.filter { it.categoryId == null }
         } else {
-            val selectedCat = productsState.categories.firstOrNull { it.id == selectedCategoryFilterId }
+            val selectedCat = categoriesById[selectedCategoryFilterId]
             if (selectedCat != null && selectedCat.parentId == null) {
                 val subIds = productsState.categories.filter { it.parentId == selectedCat.id }.map { it.id }.toSet()
                 filteredProducts.filter { it.categoryId == selectedCat.id || subIds.contains(it.subcategoryId) }
@@ -338,9 +348,9 @@ private fun ProductsMainContent(
         modifier = modifier
             .fillMaxSize()
             .testTag("screen_products"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "products_main_content") {
             Column(
@@ -502,9 +512,8 @@ private fun ProductsMainContent(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
                     if (categoryFilteredProducts.isEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = if (productsState.products.isEmpty()) {
                                 "Nenhum produto cadastrado ainda. Os produtos cadastrados aqui aparecerão automaticamente na tela Vender."
@@ -520,10 +529,30 @@ private fun ProductsMainContent(
                                 .padding(top = 8.dp, bottom = 4.dp)
                                 .testTag("products_empty_state"),
                         )
-                    } else {
-                        categoryFilteredProducts.forEachIndexed { index, product ->
-                            val mainCat = productsState.categories.firstOrNull { it.id == product.categoryId }
-                            val subCat = productsState.categories.firstOrNull { it.id == product.subcategoryId }
+                    }
+                }
+            }
+        }
+
+        if (categoryFilteredProducts.isNotEmpty()) {
+            itemsIndexed(
+                items = categoryFilteredProducts,
+                key = { _, product -> product.id },
+            ) { index, product ->
+                val mainCat = product.categoryId?.let { categoriesById[it] }
+                val subCat = product.subcategoryId?.let { categoriesById[it] }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 600.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = HomeCardGlassBottom,
+                        border = BorderStroke(1.dp, GlassNeonBorder15),
+                    ) {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             ProductsRegisteredRow(
                                 product = product,
                                 categoryName = mainCat?.name,
@@ -532,12 +561,6 @@ private fun ProductsMainContent(
                                 editIconScalePercent = if (index < 3) 160 else null,
                                 onDelete = { onRequestProductDeletion(product) },
                             )
-                            if (index < categoryFilteredProducts.lastIndex) {
-                                HorizontalDivider(
-                                    color = HomeCardSubtleDivider.copy(alpha = 0.28f),
-                                    thickness = 1.dp,
-                                )
-                            }
                         }
                     }
                 }
@@ -604,7 +627,7 @@ private fun ProductEditorScreen(
                     ProductsGlassCard {
                         ProductsFieldLabel(text = stringResource(R.string.products_name_label))
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
+                        UppercaseOutlinedTextField(
                             value = editor.nameInput,
                             onValueChange = onNameChanged,
                             singleLine = true,
@@ -974,6 +997,7 @@ private fun ProductEditorScreen(
 @Composable
 private fun CategoryManagementScreen(
     categories: List<ProductCategory>,
+    products: List<Product>,
     feedbackMessage: String?,
     feedbackIsError: Boolean,
     onOpenNewCategory: () -> Unit,
@@ -986,6 +1010,12 @@ private fun CategoryManagementScreen(
     val mainCategories = remember(categories) {
         categories.filter { it.parentId == null }.sortedBy { it.name }
     }
+    val subcategoriesByParent = remember(categories) {
+        categories
+            .filter { it.parentId != null }
+            .groupBy { it.parentId!! }
+            .mapValues { (_, list) -> list.sortedBy { it.name } }
+    }
 
     Column(
         modifier = modifier
@@ -996,15 +1026,16 @@ private fun CategoryManagementScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("category_management_scroll"),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 44.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item(key = "categories_header_card") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .widthIn(max = 600.dp),
+                        .widthIn(max = 600.dp)
+                        .padding(bottom = 16.dp),
                 ) {
                     ProductsGlassCard {
                         if (!feedbackMessage.isNullOrBlank()) {
@@ -1068,43 +1099,191 @@ private fun CategoryManagementScreen(
                 }
             }
 
-            item(key = "categories_list_section") {
+            item(key = "categories_count_header") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .widthIn(max = 600.dp),
+                        .widthIn(max = 600.dp)
+                        .padding(bottom = 12.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Text(
-                            text = "Categorias (${mainCategories.size})",
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color.White,
-                        )
+                    Text(
+                        text = "Categorias (${mainCategories.size})",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White,
+                    )
+                }
+            }
 
-                        if (mainCategories.isEmpty()) {
-                            ProductsGlassCard {
-                                Text(
-                                    text = "Nenhuma categoria cadastrada ainda. Toque em \"+ Nova categoria\" acima para começar.",
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontSize = 14.sp,
-                                    color = V19InkMuted,
-                                )
+            if (mainCategories.isEmpty()) {
+                item(key = "categories_empty_card") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 600.dp),
+                    ) {
+                        ProductsGlassCard {
+                            Text(
+                                text = "Nenhuma categoria cadastrada ainda. Toque em \"+ Nova categoria\" acima para começar.",
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontSize = 14.sp,
+                                color = V19InkMuted,
+                            )
+                        }
+                    }
+                }
+            } else {
+                mainCategories.forEach { mainCat ->
+                    val subcategories = subcategoriesByParent[mainCat.id].orEmpty()
+
+                    item(key = "category_header_${mainCat.id}") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = 600.dp),
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("category_card_${mainCat.id}"),
+                                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+                                color = HomeCardGlassTop,
+                                border = BorderStroke(1.1.dp, GlassNeonBorder15),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Color(0x66492075),
+                                            border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.5f)),
+                                            modifier = Modifier.size(46.dp),
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Mv3dIcon(
+                                                    iconRes = R.drawable.mv3d_categoria,
+                                                    contentDescription = null,
+                                                    size = 38.dp,
+                                                    modifier = Modifier.testTag("icon_mv3d_categoria_card_${mainCat.id}"),
+                                                )
+                                            }
+                                        }
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = mainCat.name,
+                                                fontFamily = PlusJakartaSansFontFamily,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 17.sp,
+                                                color = Color.White,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                text = if (subcategories.isEmpty()) {
+                                                    "Nenhuma subcategoria"
+                                                } else {
+                                                    "${subcategories.size} subcategoria(s)"
+                                                },
+                                                fontFamily = PlusJakartaSansFontFamily,
+                                                fontSize = 12.sp,
+                                                color = V19PurpleSoftText,
+                                            )
+                                        }
+
+                                        CategoryActionButtons(
+                                            category = mainCat,
+                                            onEdit = { onEditCategory(mainCat) },
+                                            onDelete = { deletingCat = mainCat },
+                                        )
+                                    }
+                                }
                             }
-                        } else {
-                            mainCategories.forEach { mainCat ->
-                                val subcategories = categories.filter { it.parentId == mainCat.id }.sortedBy { it.name }
-                                CategoryTreeCard(
-                                    mainCategory = mainCat,
-                                    subcategories = subcategories,
-                                    onAddSubcategory = { onOpenNewSubcategory(mainCat.id) },
-                                    onEditCategory = onEditCategory,
-                                    onDeleteCategory = { deletingCat = it },
-                                )
+                        }
+                    }
+
+                    if (subcategories.isNotEmpty()) {
+                        items(
+                            items = subcategories,
+                            key = { sub -> "subcategory_row_${sub.id}" },
+                        ) { subCat ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .widthIn(max = 600.dp),
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("subcategory_item_${subCat.id}"),
+                                    shape = RoundedCornerShape(0.dp),
+                                    color = HomeCardGlassBottom,
+                                    border = BorderStroke(0.8.dp, GlassNeonBorder15.copy(alpha = 0.65f)),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 22.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            text = "↳ ${subCat.name}",
+                                            fontFamily = PlusJakartaSansFontFamily,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 14.sp,
+                                            color = HomeCardLabelInk,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+
+                                        CategoryActionButtons(
+                                            category = subCat,
+                                            onEdit = { onEditCategory(subCat) },
+                                            onDelete = { deletingCat = subCat },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "category_footer_${mainCat.id}") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = 600.dp)
+                                .padding(bottom = 16.dp),
+                        ) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp),
+                                color = HomeCardGlassBottom,
+                                border = BorderStroke(1.1.dp, GlassNeonBorder15),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                ) {
+                                    ProductsSecondaryOutlinedButton(
+                                        text = "+ Subcategoria",
+                                        onClick = { onOpenNewSubcategory(mainCat.id) },
+                                        testTag = "add_subcategory_button_${mainCat.id}",
+                                        iconRes = R.drawable.mv3d_subcategoria,
+                                        iconSize = 34.dp,
+                                        iconTestTag = "icon_mv3d_subcategoria_${mainCat.id}",
+                                    )
+                                }
                             }
                         }
                     }
@@ -1115,16 +1294,45 @@ private fun CategoryManagementScreen(
 
     deletingCat?.let { cat ->
         val isSub = cat.parentId != null
+        val linkedSubCount = if (isSub) 0 else subcategoriesByParent[cat.id].orEmpty().size
+        val linkedProductsCount = if (isSub) {
+            products.count { it.subcategoryId == cat.id }
+        } else {
+            val subIds = subcategoriesByParent[cat.id].orEmpty().map { it.id }.toSet()
+            products.count { it.categoryId == cat.id || it.subcategoryId in subIds }
+        }
+        val impactDetail = buildString {
+            if (isSub) {
+                append("Deseja excluir a subcategoria \"${cat.name}\"?")
+                if (linkedProductsCount > 0) {
+                    append("\n\n$linkedProductsCount produto(s) vinculado(s) continuarão cadastrados na categoria principal (sem subcategoria).")
+                } else {
+                    append("\n\nNenhum produto está vinculado a esta subcategoria.")
+                }
+            } else {
+                append("Deseja excluir a categoria \"${cat.name}\"?")
+                if (linkedSubCount > 0) {
+                    append("\n\n$linkedSubCount subcategoria(s) vinculada(s) também serão excluídas.")
+                }
+                if (linkedProductsCount > 0) {
+                    append("\n$linkedProductsCount produto(s) vinculado(s) continuarão cadastrados em \"Sem categoria\".")
+                }
+            }
+            append("\nO histórico de vendas já registradas permanece preservado.")
+        }
+
         AlertDialog(
             onDismissRequest = { deletingCat = null },
-            title = { Text(if (isSub) "Excluir Subcategoria?" else "Excluir Categoria?", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    text = if (isSub) "Excluir Subcategoria?" else "Excluir Categoria?",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             text = {
                 Text(
-                    text = if (isSub) {
-                        "Ao excluir a subcategoria \"${cat.name}\", os produtos vinculados continuarão na categoria principal."
-                    } else {
-                        "Ao excluir a categoria \"${cat.name}\", suas subcategorias e produtos vinculados passarão para \"Sem categoria\"."
-                    },
+                    text = impactDetail,
                     fontFamily = PlusJakartaSansFontFamily,
                 )
             },
@@ -1144,7 +1352,7 @@ private fun CategoryManagementScreen(
                     },
                     modifier = Modifier.testTag("confirm_delete_category_button"),
                 ) {
-                    Text("EXCLUIR", fontFamily = PlusJakartaSansFontFamily, color = V19ErrorSoft)
+                    Text("EXCLUIR", fontFamily = PlusJakartaSansFontFamily, color = V19ErrorSoft, fontWeight = FontWeight.Bold)
                 }
             },
             modifier = Modifier.testTag("confirm_delete_category_dialog"),
@@ -1152,125 +1360,53 @@ private fun CategoryManagementScreen(
     }
 }
 
-/**
- * Cartão Árvore de Categoria Principal + Subcategorias (referência: 03_gerenciamento_categorias.png)
- */
 @Composable
-private fun CategoryTreeCard(
-    mainCategory: ProductCategory,
-    subcategories: List<ProductCategory>,
-    onAddSubcategory: () -> Unit,
-    onEditCategory: (ProductCategory) -> Unit,
-    onDeleteCategory: (ProductCategory) -> Unit,
+private fun CategoryActionButtons(
+    category: ProductCategory,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    ProductsGlassCard(
-        modifier = Modifier.testTag("category_card_${mainCategory.id}"),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Cabeçalho da Categoria Principal
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Surface(
+            onClick = onEdit,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("edit_category_${category.id}"),
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xCC5B2AA6),
+            border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.72f)),
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0x66492075),
-                border = BorderStroke(1.dp, HomeCardNeonBorder.copy(alpha = 0.5f)),
-                modifier = Modifier.size(46.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Mv3dIcon(
-                        iconRes = R.drawable.mv3d_categoria,
-                        contentDescription = null,
-                        size = 38.dp,
-                        modifier = Modifier.testTag("icon_mv3d_categoria_card_${mainCategory.id}"),
-                    )
-                }
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = mainCategory.name,
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    color = Color.White,
+            Box(contentAlignment = Alignment.Center) {
+                Mv3dIcon(
+                    iconRes = R.drawable.mv3d_editar,
+                    contentDescription = "Editar ${category.name}",
+                    size = 30.dp,
+                    modifier = Modifier.testTag("icon_edit_category_${category.id}"),
                 )
-                Text(
-                    text = if (subcategories.isEmpty()) "Nenhuma subcategoria" else "${subcategories.size} subcategoria(s)",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontSize = 12.sp,
-                    color = V19PurpleSoftText,
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(
-                    onClick = { onEditCategory(mainCategory) },
-                    modifier = Modifier.testTag("edit_category_${mainCategory.id}"),
-                ) {
-                    Text("✏️", fontSize = 16.sp)
-                }
-                TextButton(
-                    onClick = { onDeleteCategory(mainCategory) },
-                    modifier = Modifier.testTag("delete_category_${mainCategory.id}"),
-                ) {
-                    Text("🗑️", fontSize = 16.sp)
-                }
             }
         }
 
-        // Subcategorias Indentadas
-        if (subcategories.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.25f))
-            Spacer(modifier = Modifier.height(10.dp))
-
-            subcategories.forEach { subCat ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "↳ ${subCat.name}",
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        color = HomeCardLabelInk,
-                        modifier = Modifier.weight(1f),
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        TextButton(
-                            onClick = { onEditCategory(subCat) },
-                            modifier = Modifier.testTag("edit_category_${subCat.id}"),
-                        ) {
-                            Text("✏️", fontSize = 14.sp)
-                        }
-                        TextButton(
-                            onClick = { onDeleteCategory(subCat) },
-                            modifier = Modifier.testTag("delete_category_${subCat.id}"),
-                        ) {
-                            Text("🗑️", fontSize = 14.sp)
-                        }
-                    }
-                }
+        Surface(
+            onClick = onDelete,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("delete_category_${category.id}"),
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xCC56213B),
+            border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.58f)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Mv3dIcon(
+                    iconRes = R.drawable.mv3d_excluir,
+                    contentDescription = "Excluir ${category.name}",
+                    size = 30.dp,
+                    modifier = Modifier.testTag("icon_delete_category_${category.id}"),
+                )
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        ProductsSecondaryOutlinedButton(
-            text = "+ Subcategoria",
-            onClick = onAddSubcategory,
-            testTag = "add_subcategory_button_${mainCategory.id}",
-            iconRes = R.drawable.mv3d_subcategoria,
-            iconSize = 34.dp,
-            iconTestTag = "icon_mv3d_subcategoria_${mainCategory.id}",
-        )
     }
 }
 
@@ -1448,7 +1584,7 @@ private fun CreateEditCategoryScreen(
                             text = if (isSubcategory) "Nome da subcategoria" else "Nome da categoria principal",
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
+                        UppercaseOutlinedTextField(
                             value = nameInput,
                             onValueChange = onNameChanged,
                             enabled = !editor.isSaving,
@@ -1461,7 +1597,7 @@ private fun CreateEditCategoryScreen(
                             ),
                             placeholder = {
                                 Text(
-                                    text = if (isSubcategory) "Ex.: Pokémon" else "Ex.: 3D",
+                                    text = if (isSubcategory) "Ex.: POKÉMON" else "Ex.: 3D",
                                     fontFamily = PlusJakartaSansFontFamily,
                                     fontSize = 15.sp,
                                     color = V19InkMuted,

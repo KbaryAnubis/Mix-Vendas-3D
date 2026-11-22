@@ -13,12 +13,14 @@ import com.mixvendas3d.app.domain.models.CustomBrandKeyCodec
 import com.mixvendas3d.app.domain.models.InstallmentTiers
 import com.mixvendas3d.app.domain.models.Machine
 import com.mixvendas3d.app.util.RateFormatter
-import java.util.Locale
+import com.mixvendas3d.app.util.TextNormalization
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -78,14 +80,20 @@ data class MachinesUiState(
     val feedbackMessage: String? = null,
     val errorMessage: String? = null,
     val editor: MachineEditorUiState = MachineEditorUiState(),
+    val precomputedFilteredMachines: List<Machine>? = null,
 ) {
     val filteredMachines: List<Machine>
-        get() {
-            val ptBr = Locale.forLanguageTag("pt-BR")
-            val query = searchQuery.trim().lowercase(ptBr)
+        get() = precomputedFilteredMachines ?: computeFilteredMachines(machines, searchQuery)
+
+    companion object {
+        fun computeFilteredMachines(machines: List<Machine>, searchQuery: String): List<Machine> {
+            val query = TextNormalization.normalizeForSearch(searchQuery)
             if (query.isEmpty()) return machines
-            return machines.filter { it.name.lowercase(ptBr).contains(query) }
+            return machines.filter {
+                TextNormalization.normalizeForSearch(it.name).contains(query)
+            }
         }
+    }
 }
 
 private data class MachinesFormState(
@@ -113,12 +121,15 @@ class MachinesViewModel(
             feedbackMessage = form.feedbackMessage,
             errorMessage = form.errorMessage,
             editor = form.editor,
+            precomputedFilteredMachines = MachinesUiState.computeFilteredMachines(machines, form.searchQuery),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = MachinesUiState(),
-    )
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = MachinesUiState(),
+        )
 
     fun onSearchQueryChanged(query: String) {
         formFlow.value = formFlow.value.copy(
@@ -177,7 +188,7 @@ class MachinesViewModel(
         val initialEditor = MachineEditorUiState(
             isOpen = true,
             editingMachineId = machine.id,
-            nameInput = machine.name,
+            nameInput = TextNormalization.toRegistrationUppercase(machine.name),
             debitRateInput = RateFormatter.formatBpsForInput(machine.debitRateBps),
             creditEnabled = machine.creditEnabled,
             creditDefaultRateInput = RateFormatter.formatBpsForInput(machine.creditDefaultRateBps),
@@ -251,7 +262,8 @@ class MachinesViewModel(
     }
 
     fun onEditorNameChanged(value: String) {
-        updateEditor { it.copy(nameInput = value, errorMessage = null) }
+        val upper = TextNormalization.toRegistrationUppercase(value)
+        updateEditor { it.copy(nameInput = upper, errorMessage = null) }
     }
 
     fun onEditorDebitRateChanged(value: String) {
@@ -318,9 +330,10 @@ class MachinesViewModel(
     }
 
     fun onNewCustomBrandNameChanged(value: String) {
+        val upper = TextNormalization.toRegistrationUppercase(value)
         updateEditor {
             it.copy(
-                newCustomBrandNameInput = value,
+                newCustomBrandNameInput = upper,
                 customBrandErrorMessage = null,
                 errorMessage = null,
             )
@@ -355,7 +368,8 @@ class MachinesViewModel(
         val editor = formFlow.value.editor
         if (!editor.isOpen) return
         try {
-            val cleanName = MachineValidator.validateCustomBrandName(editor.newCustomBrandNameInput)
+            val upperBrandInput = TextNormalization.toRegistrationUppercase(editor.newCustomBrandNameInput)
+            val cleanName = MachineValidator.validateCustomBrandName(upperBrandInput)
             val normalizedNew = MachineValidator.normalizeCustomBrandName(cleanName)
             val duplicate = editor.customBrandDrafts.any {
                 MachineValidator.normalizeCustomBrandName(it.name) == normalizedNew
@@ -513,7 +527,7 @@ class MachinesViewModel(
                 editor.maxInstallments == null
 
             MachineInputDraft(
-                name = editor.nameInput,
+                name = TextNormalization.toRegistrationUppercase(editor.nameInput),
                 debitRateBps = debitBps,
                 creditEnabled = editor.creditEnabled,
                 creditDefaultRateBps = creditDefaultBps,

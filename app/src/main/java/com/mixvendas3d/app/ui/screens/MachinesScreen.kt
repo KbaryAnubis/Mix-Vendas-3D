@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -82,6 +83,7 @@ import com.mixvendas3d.app.ui.components.MachinesRateOptionRow
 import com.mixvendas3d.app.ui.components.MachinesToggleCheckRow
 import com.mixvendas3d.app.ui.components.Mv3dIcon
 import com.mixvendas3d.app.ui.components.ProductsSecondaryOutlinedButton
+import com.mixvendas3d.app.ui.components.UppercaseOutlinedTextField
 import com.mixvendas3d.app.ui.components.namesDarkInputColors
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
@@ -151,7 +153,9 @@ fun MachinesScreen(
     ) {
         if (!uiState.editor.isOpen) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("machines_list_lazy"),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -305,18 +309,27 @@ fun MachinesScreen(
                                     )
                                 }
                             }
-                        } else {
-                            filteredMachines.forEachIndexed { index, machine ->
-                                androidx.compose.runtime.key(machine.id) {
-                                    MachineV2Card(
-                                        machine = machine,
-                                        showListIcons = index < 2,
-                                        onEdit = { onOpenEditMachine(machine) },
-                                        onToggleCredit = { onToggleCreditEnabled(machine) },
-                                        onRequestDelete = { pendingDeleteTarget = machine },
-                                    )
-                                }
-                            }
+                        }
+                    }
+                }
+
+                if (filteredMachines.isNotEmpty()) {
+                    itemsIndexed(
+                        items = filteredMachines,
+                        key = { _, machine -> machine.id },
+                    ) { index, machine ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = 600.dp),
+                        ) {
+                            MachineV2Card(
+                                machine = machine,
+                                showListIcons = index < 2,
+                                onEdit = { onOpenEditMachine(machine) },
+                                onToggleCredit = { onToggleCreditEnabled(machine) },
+                                onRequestDelete = { pendingDeleteTarget = machine },
+                            )
                         }
                     }
                 }
@@ -356,6 +369,7 @@ fun MachinesScreen(
         AlertDialog(
             onDismissRequest = { pendingDeleteTarget = null },
             containerColor = V19SurfaceCard,
+            modifier = Modifier.testTag("delete_machine_dialog"),
             title = {
                 Text(
                     text = "Excluir maquininha?",
@@ -366,7 +380,7 @@ fun MachinesScreen(
             },
             text = {
                 Text(
-                    text = "Deseja excluir \"${target.name}\" e todas as suas tarifas do banco local? Esta ação não pode ser desfeita.",
+                    text = "Deseja excluir \"${target.name}\" e todas as suas tarifas do banco local? Esta ação não pode ser desfeita. O histórico de vendas já registradas permanece preservado.",
                     fontFamily = PlusJakartaSansFontFamily,
                     color = V19InkMuted,
                 )
@@ -933,7 +947,7 @@ private fun MachineEditorContent(
                             color = Color.White,
                         )
                         Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
+                        UppercaseOutlinedTextField(
                             value = editor.nameInput,
                             onValueChange = onNameChanged,
                             singleLine = true,
@@ -1604,7 +1618,7 @@ private fun CustomBrandAddCard(
             modifier = Modifier.padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
+            UppercaseOutlinedTextField(
                 value = newNameInput,
                 onValueChange = onNewNameChanged,
                 singleLine = true,
@@ -1616,7 +1630,7 @@ private fun CustomBrandAddCard(
                 ),
                 placeholder = {
                     Text(
-                        text = "Ex.: Crédz, Alelo, Banese Card",
+                        text = "Ex.: CRÉDZ, ALELO, BANESE CARD",
                         fontFamily = PlusJakartaSansFontFamily,
                         fontSize = 14.sp,
                         color = V19InkMuted,

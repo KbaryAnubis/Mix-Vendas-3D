@@ -39,6 +39,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -144,7 +146,11 @@ fun ProductsMonetaryTextField(
 
     OutlinedTextField(
         value = fieldValue,
-        onValueChange = { updated -> onMaskedInputChanged(updated.text) },
+        onValueChange = { updated ->
+            if (updated.text != maskedValue) {
+                onMaskedInputChanged(updated.text)
+            }
+        },
         enabled = enabled,
         singleLine = true,
         textStyle = TextStyle(
@@ -493,6 +499,8 @@ fun ProductsDropdownField(
     enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     Column(
         modifier = modifier,
@@ -504,7 +512,11 @@ fun ProductsDropdownField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 50.dp)
-                    .clickable(enabled = enabled) { expanded = true }
+                    .clickable(enabled = enabled) {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        expanded = true
+                    }
                     .testTag(testTag),
                 shape = RoundedCornerShape(16.dp),
                 color = GlassInnerBoxBg,
@@ -535,8 +547,14 @@ fun ProductsDropdownField(
             }
             DropdownMenu(
                 expanded = expanded && enabled,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.background(Color(0xFF23103C)),
+                onDismissRequest = {
+                    expanded = false
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                },
+                modifier = Modifier
+                    .background(Color(0xFF23103C))
+                    .heightIn(max = 360.dp),
             ) {
                 options.forEach { (id, text) ->
                     val itemTag = when {
@@ -556,6 +574,8 @@ fun ProductsDropdownField(
                         },
                         onClick = {
                             expanded = false
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
                             onOptionSelected(id)
                         },
                         modifier = Modifier.testTag(itemTag),

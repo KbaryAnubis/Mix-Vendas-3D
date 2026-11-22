@@ -128,6 +128,7 @@ import com.mixvendas3d.app.ui.theme.V19SuccessInk
 import com.mixvendas3d.app.ui.theme.V19SurfaceCard
 import com.mixvendas3d.app.util.CurrencyFormatter
 import com.mixvendas3d.app.util.RateFormatter
+import com.mixvendas3d.app.util.TextNormalization
 import java.text.Normalizer
 import java.time.LocalDate
 import java.time.ZoneId
@@ -1914,53 +1915,70 @@ private fun SearchableProductPickerDialog(
     onDecrementQty: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val ptBr = remember { Locale.forLanguageTag("pt-BR") }
-    val normalizedQuery = remember(searchQuery, ptBr) { searchQuery.trim().lowercase(ptBr) }
+    val normalizedQuery = remember(searchQuery) { TextNormalization.normalizeForSearch(searchQuery) }
     val isSearching = normalizedQuery.isNotEmpty()
-    val filteredProducts = remember(products, normalizedQuery, ptBr) {
+    val filteredProducts = remember(products, normalizedQuery) {
         if (normalizedQuery.isEmpty()) {
             products
         } else {
-            products.filter { it.name.lowercase(ptBr).contains(normalizedQuery) }
+            products.filter { TextNormalization.normalizeForSearch(it.name).contains(normalizedQuery) }
         }
     }
-    val pickerStructure = remember(filteredProducts, categories) {
+    val pickerStructure = remember(filteredProducts, categories, isSearching) {
         if (categories.isEmpty()) {
             null
         } else {
             val mainCategories = categories.filter { it.parentId == null }.sortedBy { it.name }
-            val mainCategoryIds = mainCategories.map { it.id }.toSet()
+            val mainCategoryIds = mainCategories.mapTo(HashSet(mainCategories.size)) { it.id }
             val subcategoriesByParent = categories
                 .filter { it.parentId != null }
                 .groupBy { it.parentId!! }
                 .mapValues { (_, list) -> list.sortedBy { it.name } }
 
-            val uncategorizedProducts = filteredProducts.filter {
-                it.categoryId == null || !mainCategoryIds.contains(it.categoryId)
+            val productsByMainCategory = HashMap<String, MutableList<Product>>(mainCategories.size)
+            val uncategorizedProducts = ArrayList<Product>()
+            filteredProducts.forEach { product ->
+                val catId = product.categoryId
+                if (catId == null || !mainCategoryIds.contains(catId)) {
+                    uncategorizedProducts.add(product)
+                } else {
+                    productsByMainCategory.getOrPut(catId) { ArrayList() }.add(product)
+                }
             }
 
             val groups = mainCategories.mapNotNull { mainCat ->
-                val subcategories = subcategoriesByParent[mainCat.id].orEmpty()
-                val validSubIds = subcategories.map { it.id }.toSet()
-                val productsInMain = filteredProducts.filter { it.categoryId == mainCat.id }
-                val directProducts = productsInMain.filter {
-                    it.subcategoryId == null || !validSubIds.contains(it.subcategoryId)
+                val productsInMain = productsByMainCategory[mainCat.id].orEmpty()
+                if (productsInMain.isEmpty()) {
+                    return@mapNotNull null
                 }
-                val subProductsBySubId = subcategories.associate { sub ->
-                    sub.id to productsInMain.filter { it.subcategoryId == sub.id }
+                val allSubcategories = subcategoriesByParent[mainCat.id].orEmpty()
+                val validSubIds = allSubcategories.mapTo(HashSet(allSubcategories.size)) { it.id }
+                val directProducts = ArrayList<Product>()
+                val subProductsMap = HashMap<String, MutableList<Product>>(allSubcategories.size)
+                productsInMain.forEach { product ->
+                    val subId = product.subcategoryId
+                    if (subId == null || !validSubIds.contains(subId)) {
+                        directProducts.add(product)
+                    } else {
+                        subProductsMap.getOrPut(subId) { ArrayList() }.add(product)
+                    }
                 }
-                val totalCount = directProducts.size + subProductsBySubId.values.sumOf { it.size }
-                if (totalCount > 0) {
-                    PickerCategoryGroup(
-                        mainCategory = mainCat,
-                        subcategories = subcategories,
-                        directProducts = directProducts,
-                        subProductsBySubId = subProductsBySubId,
-                        totalCount = totalCount,
-                    )
+                val visibleSubcategories = if (isSearching) {
+                    allSubcategories.filter { sub -> !subProductsMap[sub.id].isNullOrEmpty() }
                 } else {
-                    null
+                    allSubcategories
                 }
+                val subProductsBySubId = visibleSubcategories.associate { sub ->
+                    sub.id to (subProductsMap[sub.id]?.toList() ?: emptyList())
+                }
+                val totalCount = productsInMain.size
+                PickerCategoryGroup(
+                    mainCategory = mainCat,
+                    subcategories = visibleSubcategories,
+                    directProducts = directProducts,
+                    subProductsBySubId = subProductsBySubId,
+                    totalCount = totalCount,
+                )
             }
             PickerCatalogStructure(
                 uncategorizedProducts = uncategorizedProducts,

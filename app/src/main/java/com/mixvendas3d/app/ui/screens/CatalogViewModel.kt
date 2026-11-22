@@ -7,6 +7,7 @@ import com.mixvendas3d.app.data.repository.CatalogRepository
 import com.mixvendas3d.app.data.local.dao.ProductDeletionResult
 import com.mixvendas3d.app.domain.calculation.CatalogValidationException
 import com.mixvendas3d.app.domain.calculation.ProductParticipantDraft
+import com.mixvendas3d.app.domain.calculation.ProductPriceSplitCalculator
 import com.mixvendas3d.app.domain.models.FeeResponsibilityMode
 import com.mixvendas3d.app.domain.models.MoneyCents
 import com.mixvendas3d.app.domain.models.PersonWithUsage
@@ -14,11 +15,13 @@ import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.util.CurrencyFormatter
 import com.mixvendas3d.app.util.MonetaryInputMask
-import java.util.Locale
+import com.mixvendas3d.app.util.TextNormalization
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -42,6 +45,7 @@ data class ProductEditorUiState(
     val subcategoryId: String? = null,
     val selectedParticipantOrder: List<String> = emptyList(),
     val participantAmountInputs: Map<String, String> = emptyMap(),
+    val lastEditedParticipantId: String? = null,
     val feeResponsibilityMode: FeeResponsibilityMode = FeeResponsibilityMode.PROPORTIONAL,
     val feeOwnerPersonId: String? = null,
     val errorMessage: String? = null,
@@ -83,19 +87,27 @@ data class ProductsSectionUiState(
 data class CatalogUiState(
     val names: NamesSectionUiState = NamesSectionUiState(),
     val products: ProductsSectionUiState = ProductsSectionUiState(),
+    val precomputedFilteredProducts: List<Product>? = null,
 ) {
     val filteredProducts: List<Product>
-        get() {
-            val ptBr = Locale.forLanguageTag("pt-BR")
-            val query = products.searchQuery.trim().lowercase(ptBr)
-            return products.products.filter { product ->
-                val matchesActive = !products.showOnlyActive || product.active
+        get() = precomputedFilteredProducts ?: computeFilteredProducts(products)
+
+    companion object {
+        fun computeFilteredProducts(productsState: ProductsSectionUiState): List<Product> {
+            val query = TextNormalization.normalizeForSearch(productsState.searchQuery)
+            val onlyActive = productsState.showOnlyActive
+            if (query.isEmpty() && !onlyActive) return productsState.products
+            return productsState.products.filter { product ->
+                val matchesActive = !onlyActive || product.active
                 val matchesSearch = query.isEmpty() ||
-                    product.name.lowercase(ptBr).contains(query) ||
-                    product.participants.any { it.personName.lowercase(ptBr).contains(query) }
+                    TextNormalization.normalizeForSearch(product.name).contains(query) ||
+                    product.participants.any {
+                        TextNormalization.normalizeForSearch(it.personName).contains(query)
+                    }
                 matchesActive && matchesSearch
             }
         }
+    }
 }
 
 class CatalogViewModel(
@@ -116,6 +128,19 @@ class CatalogViewModel(
             null, "uncategorized" -> filterId
             else -> if (categories.any { it.id == filterId }) filterId else null
         }
+        val productsSection = ProductsSectionUiState(
+            products = products,
+            categories = categories,
+            searchQuery = productsForm.searchQuery,
+            showOnlyActive = productsForm.showOnlyActive,
+            selectedCategoryFilterId = validSelectedCategoryFilterId,
+            feedbackMessage = productsForm.feedbackMessage,
+            feedbackIsError = productsForm.feedbackIsError,
+            editor = productsForm.editor,
+            categoryManagerOpen = productsForm.categoryManagerOpen,
+            categoryEditor = productsForm.categoryEditor,
+            deletionPrompt = productsForm.deletionPrompt,
+        )
         CatalogUiState(
             names = NamesSectionUiState(
                 people = people,
@@ -125,31 +150,22 @@ class CatalogViewModel(
                 feedbackMessage = namesForm.feedbackMessage,
                 isSaving = namesForm.isSaving,
             ),
-            products = ProductsSectionUiState(
-                products = products,
-                categories = categories,
-                searchQuery = productsForm.searchQuery,
-                showOnlyActive = productsForm.showOnlyActive,
-                selectedCategoryFilterId = validSelectedCategoryFilterId,
-                feedbackMessage = productsForm.feedbackMessage,
-                feedbackIsError = productsForm.feedbackIsError,
-                editor = productsForm.editor,
-                categoryManagerOpen = productsForm.categoryManagerOpen,
-                categoryEditor = productsForm.categoryEditor,
-                deletionPrompt = productsForm.deletionPrompt,
-            ),
+            products = productsSection,
+            precomputedFilteredProducts = CatalogUiState.computeFilteredProducts(productsSection),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = CatalogUiState(),
-    )
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = CatalogUiState(),
+        )
 
     // --- Ações de Nomes (Pessoas) ---
 
     fun onPersonNameInputChanged(value: String) {
         namesFormFlow.value = namesFormFlow.value.copy(
-            nameInput = value,
+            nameInput = TextNormalization.toRegistrationUppercase(value),
             errorMessage = null,
             feedbackMessage = null,
         )
@@ -158,7 +174,7 @@ class CatalogViewModel(
     fun startEditingPerson(personWithUsage: PersonWithUsage) {
         namesFormFlow.value = namesFormFlow.value.copy(
             editingPersonId = personWithUsage.person.id,
-            nameInput = personWithUsage.person.name,
+            nameInput = TextNormalization.toRegistrationUppercase(personWithUsage.person.name),
             errorMessage = null,
             feedbackMessage = null,
         )
@@ -175,13 +191,14 @@ class CatalogViewModel(
 
         viewModelScope.launch {
             try {
+                val normalizedUpperName = TextNormalization.toRegistrationUppercase(form.nameInput)
                 if (form.editingPersonId == null) {
-                    val created = catalogRepository.createPerson(form.nameInput)
+                    val created = catalogRepository.createPerson(normalizedUpperName)
                     namesFormFlow.value = NamesFormState(
                         feedbackMessage = "\"${created.name}\" adicionada com sucesso.",
                     )
                 } else {
-                    val renamed = catalogRepository.renamePerson(form.editingPersonId, form.nameInput)
+                    val renamed = catalogRepository.renamePerson(form.editingPersonId, normalizedUpperName)
                     namesFormFlow.value = NamesFormState(
                         feedbackMessage = "Nome atualizado para \"${renamed.name}\".",
                     )
@@ -250,7 +267,7 @@ class CatalogViewModel(
     fun openEditProductEditor(product: Product) {
         val participantIds = product.participants.map { it.personId }
         val amountInputs = product.participants.associate { split ->
-            split.personId to MonetaryInputMask.formatCentsForMaskedInput(split.amount.rawCents)
+            split.personId to ProductPriceSplitCalculator.formatCentsAllowingZero(split.amount.rawCents)
         }
         productsFormFlow.value = productsFormFlow.value.copy(
             feedbackMessage = null,
@@ -260,13 +277,14 @@ class CatalogViewModel(
             editor = ProductEditorUiState(
                 isOpen = true,
                 editingProductId = product.id,
-                nameInput = product.name,
+                nameInput = TextNormalization.toRegistrationUppercase(product.name),
                 priceInput = MonetaryInputMask.formatCentsForMaskedInput(product.price.rawCents),
                 active = product.active,
                 categoryId = product.categoryId,
                 subcategoryId = product.subcategoryId,
                 selectedParticipantOrder = participantIds,
                 participantAmountInputs = amountInputs,
+                lastEditedParticipantId = null,
                 feeResponsibilityMode = product.feeResponsibilityMode,
                 feeOwnerPersonId = product.feeOwnerPersonId,
             ),
@@ -335,7 +353,7 @@ class CatalogViewModel(
                 editingCategoryId = category.id,
                 isSubcategory = category.parentId != null,
                 parentId = category.parentId,
-                nameInput = category.name,
+                nameInput = TextNormalization.toRegistrationUppercase(category.name),
             ),
         )
     }
@@ -371,8 +389,9 @@ class CatalogViewModel(
     }
 
     fun onCategoryEditorNameChanged(value: String) {
+        val upper = TextNormalization.toRegistrationUppercase(value)
         updateCategoryEditor { editor ->
-            if (editor.isSaving) editor else editor.copy(nameInput = value, errorMessage = null)
+            if (editor.isSaving) editor else editor.copy(nameInput = upper, errorMessage = null)
         }
     }
 
@@ -380,7 +399,7 @@ class CatalogViewModel(
         val editor = productsFormFlow.value.categoryEditor
         if (!editor.isOpen || editor.isSaving) return
 
-        val cleanName = editor.nameInput.trim()
+        val cleanName = TextNormalization.toRegistrationUppercase(editor.nameInput).trim()
         if (cleanName.isBlank()) {
             updateCategoryEditor { it.copy(errorMessage = "Informe o nome da categoria.") }
             return
@@ -496,12 +515,25 @@ class CatalogViewModel(
     }
 
     fun onProductNameChanged(value: String) {
-        updateEditor { it.copy(nameInput = value, errorMessage = null) }
+        val upper = TextNormalization.toRegistrationUppercase(value)
+        updateEditor { it.copy(nameInput = upper, errorMessage = null) }
     }
 
     fun onProductPriceChanged(value: String) {
         val masked = MonetaryInputMask.formatDigitsInput(value)
-        updateEditor { it.copy(priceInput = masked, errorMessage = null) }
+        updateEditor { editor ->
+            val recalculatedInputs = ProductPriceSplitCalculator.onTotalPriceChanged(
+                newPriceInput = masked,
+                selectedParticipantOrder = editor.selectedParticipantOrder,
+                currentInputs = editor.participantAmountInputs,
+                lastEditedParticipantId = editor.lastEditedParticipantId,
+            )
+            editor.copy(
+                priceInput = masked,
+                participantAmountInputs = recalculatedInputs,
+                errorMessage = null,
+            )
+        }
     }
 
     fun onProductActiveChanged(active: Boolean) {
@@ -523,9 +555,10 @@ class CatalogViewModel(
     }
 
     fun createProductCategory(name: String, parentId: String? = null) {
+        val upperName = TextNormalization.toRegistrationUppercase(name)
         viewModelScope.launch {
             try {
-                catalogRepository.createProductCategory(name, parentId)
+                catalogRepository.createProductCategory(upperName, parentId)
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = if (parentId == null) "Categoria criada." else "Subcategoria criada.",
                     feedbackIsError = false,
@@ -540,9 +573,10 @@ class CatalogViewModel(
     }
 
     fun renameProductCategory(categoryId: String, name: String) {
+        val upperName = TextNormalization.toRegistrationUppercase(name)
         viewModelScope.launch {
             try {
-                catalogRepository.renameProductCategory(categoryId, name)
+                catalogRepository.renameProductCategory(categoryId, upperName)
                 productsFormFlow.value = productsFormFlow.value.copy(
                     feedbackMessage = "Categoria renomeada.",
                     feedbackIsError = false,
@@ -600,9 +634,17 @@ class CatalogViewModel(
                 }
             }
 
+            val splitResult = ProductPriceSplitCalculator.onParticipantsSelectionChanged(
+                priceInput = editor.priceInput,
+                selectedParticipantOrder = currentOrder,
+                currentInputs = currentAmounts,
+                lastEditedParticipantId = editor.lastEditedParticipantId,
+            )
+
             editor.copy(
                 selectedParticipantOrder = currentOrder,
-                participantAmountInputs = currentAmounts,
+                participantAmountInputs = splitResult.updatedInputs,
+                lastEditedParticipantId = splitResult.lastEditedParticipantId,
                 feeOwnerPersonId = nextOwner,
                 errorMessage = null,
             )
@@ -610,12 +652,17 @@ class CatalogViewModel(
     }
 
     fun onParticipantAmountChanged(personId: String, amountInput: String) {
-        val masked = MonetaryInputMask.formatDigitsInput(amountInput)
         updateEditor { editor ->
-            val updated = editor.participantAmountInputs.toMutableMap()
-            updated[personId] = masked
+            val splitResult = ProductPriceSplitCalculator.onParticipantAmountEdited(
+                priceInput = editor.priceInput,
+                selectedParticipantOrder = editor.selectedParticipantOrder,
+                currentInputs = editor.participantAmountInputs,
+                editedPersonId = personId,
+                rawInput = amountInput,
+            )
             editor.copy(
-                participantAmountInputs = updated,
+                participantAmountInputs = splitResult.updatedInputs,
+                lastEditedParticipantId = splitResult.lastEditedParticipantId,
                 errorMessage = null,
             )
         }
@@ -671,9 +718,10 @@ class CatalogViewModel(
 
         viewModelScope.launch {
             try {
+                val normalizedUpperName = TextNormalization.toRegistrationUppercase(editor.nameInput)
                 if (editor.editingProductId == null) {
                     val created = catalogRepository.createProduct(
-                        name = editor.nameInput,
+                        name = normalizedUpperName,
                         price = MoneyCents(parsedPriceCents),
                         active = editor.active,
                         participants = drafts,
@@ -690,7 +738,7 @@ class CatalogViewModel(
                 } else {
                     val updated = catalogRepository.updateProduct(
                         productId = editor.editingProductId,
-                        name = editor.nameInput,
+                        name = normalizedUpperName,
                         price = MoneyCents(parsedPriceCents),
                         active = editor.active,
                         participants = drafts,

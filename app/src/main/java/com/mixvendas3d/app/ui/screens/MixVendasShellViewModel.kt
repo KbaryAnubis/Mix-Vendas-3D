@@ -46,6 +46,7 @@ import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
 import com.mixvendas3d.app.domain.reporting.RealDailySalesReport
 import com.mixvendas3d.app.util.CurrencyFormatter
 import com.mixvendas3d.app.util.RateFormatter
+import com.mixvendas3d.app.util.TextNormalization
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -333,17 +334,13 @@ class MixVendasShellViewModel(
         )
     }.flowOn(Dispatchers.Default)
 
-    val uiState: StateFlow<MixVendasShellUiState> = combine(
+    private val aggregatedBaseStateFlow = combine(
         dataBundleFlow,
         filterStateFlow,
-        venderFormFlow,
-        salesActionFlow,
-        csvExportStateFlow,
-    ) { bundle, filter, venderForm, salesAction, csvExport ->
+    ) { bundle, filter ->
         latestActiveProducts = bundle.activeProducts
         latestMachines = bundle.machines
         latestRealSales = bundle.realSales
-        val syncedForm = syncForm(venderForm, bundle.activeProducts, bundle.machines)
         buildUiState(
             roomPrefCount = bundle.prefCount,
             registeredPeople = bundle.people,
@@ -353,26 +350,44 @@ class MixVendasShellViewModel(
             realSales = bundle.realSales,
             realDailyReport = bundle.realDailyReport,
             filter = filter,
-            venderForm = syncedForm,
-            salesAction = salesAction,
-            closingCsvExport = csvExport,
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = buildUiState(
-            roomPrefCount = 0,
-            registeredPeople = emptyList(),
-            activeCatalogProducts = emptyList(),
-            machines = emptyList(),
-            realSales = emptyList(),
-            realDailyReport = RealDailySalesReport(),
-            filter = FilterState(),
             venderForm = VenderFormUiState(),
             salesAction = SalesActionState(),
             closingCsvExport = ClosingCsvExportUiState(),
-        ),
-    )
+        )
+    }.flowOn(Dispatchers.Default)
+
+    val uiState: StateFlow<MixVendasShellUiState> = combine(
+        aggregatedBaseStateFlow,
+        venderFormFlow,
+        salesActionFlow,
+        csvExportStateFlow,
+    ) { baseState, venderForm, salesAction, csvExport ->
+        val syncedForm = syncForm(venderForm, baseState.activeCatalogProducts, baseState.machines)
+        baseState.copy(
+            saleDeleteState = salesAction.deleteState,
+            salesFeedbackMessage = salesAction.feedbackMessage,
+            salesFeedbackIsError = salesAction.feedbackIsError,
+            closingCsvExportState = csvExport,
+            venderForm = syncedForm,
+        )
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = buildUiState(
+                roomPrefCount = 0,
+                registeredPeople = emptyList(),
+                activeCatalogProducts = emptyList(),
+                machines = emptyList(),
+                realSales = emptyList(),
+                realDailyReport = RealDailySalesReport(),
+                filter = FilterState(),
+                venderForm = VenderFormUiState(),
+                salesAction = SalesActionState(),
+                closingCsvExport = ClosingCsvExportUiState(),
+            ),
+        )
 
     fun togglePreviewData() {
         val current = filterStateFlow.value
@@ -1906,8 +1921,9 @@ class MixVendasShellViewModel(
                 )
             }
 
+        val closingByPaymentMethod = filteredClosingReal.groupBy { it.calculation.paymentMethod }
         val closingRealPaymentBreakdowns = SalePaymentMethod.entries.map { method ->
-            val subset = filteredClosingReal.filter { it.calculation.paymentMethod == method }
+            val subset = closingByPaymentMethod[method].orEmpty()
             var methodGross = 0L
             var methodFee = 0L
             var methodNet = 0L
@@ -2176,7 +2192,7 @@ class MixVendasShellViewModel(
         }
         val fromParsed = parseOptionalIsoDate(filter.periodFromDate)
         val toParsed = parseOptionalIsoDate(filter.periodToDate)
-        val search = filter.salesSearchQuery.trim().lowercase(ptBrLocale)
+        val search = TextNormalization.normalizeForSearch(filter.salesSearchQuery)
 
         return sales.filter { persisted ->
             val calc = persisted.calculation
@@ -2189,23 +2205,25 @@ class MixVendasShellViewModel(
             }
             val matchesMethod = filter.salesMethodFilter == null ||
                 calc.paymentMethod == filter.salesMethodFilter.toSalePaymentMethod()
-            val matchesSearch = search.isEmpty() || buildString {
-                append(calc.paymentMethod.label)
-                append(' ')
-                append(calc.note)
-                append(' ')
-                append(calc.machineSnapshot?.machineName.orEmpty())
-                append(' ')
-                append(calc.machineSnapshot?.appliedBrandDisplayLabel.orEmpty())
-                calc.items.forEach { item ->
+            val matchesSearch = search.isEmpty() || TextNormalization.normalizeForSearch(
+                buildString {
+                    append(calc.paymentMethod.label)
                     append(' ')
-                    append(item.productName)
-                }
-                calc.personTotals.forEach { person ->
+                    append(calc.note)
                     append(' ')
-                    append(person.personName)
-                }
-            }.lowercase(ptBrLocale).contains(search)
+                    append(calc.machineSnapshot?.machineName.orEmpty())
+                    append(' ')
+                    append(calc.machineSnapshot?.appliedBrandDisplayLabel.orEmpty())
+                    calc.items.forEach { item ->
+                        append(' ')
+                        append(item.productName)
+                    }
+                    calc.personTotals.forEach { person ->
+                        append(' ')
+                        append(person.personName)
+                    }
+                },
+            ).contains(search)
 
             matchesPeriod && matchesMethod && matchesSearch
         }.sortedWith(
