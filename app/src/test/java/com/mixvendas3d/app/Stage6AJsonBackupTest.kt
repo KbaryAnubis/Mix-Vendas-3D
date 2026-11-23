@@ -513,7 +513,7 @@ class Stage6AJsonBackupTest {
                 feeResponsibilityMode = FeeResponsibilityMode.EQUAL,
                 feeOwnerPersonId = null,
             )
-            machineRepo.deleteMachine(machine.id)
+            db.machineDao().deleteById(machine.id)
 
             val activeMachine = machineRepo.createMachine(
                 MachineInputDraft(
@@ -1244,7 +1244,7 @@ class Stage6AJsonBackupTest {
             )
 
             // Remove completamente maquininha, produto e pessoa do catálogo (mantendo apenas o snapshot da venda)
-            machineRepo.deleteMachine(machine.id)
+            db.machineDao().deleteById(machine.id)
             val sqlite = db.openHelper.writableDatabase
             sqlite.execSQL("DELETE FROM products WHERE id = ?", arrayOf(produto.id))
             catalogRepo.deletePerson(ana.id)

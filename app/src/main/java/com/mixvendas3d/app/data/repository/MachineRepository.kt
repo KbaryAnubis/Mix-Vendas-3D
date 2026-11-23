@@ -1,6 +1,7 @@
 package com.mixvendas3d.app.data.repository
 
 import com.mixvendas3d.app.data.local.dao.MachineDao
+import com.mixvendas3d.app.data.local.dao.MachineDeletionOutcome
 import com.mixvendas3d.app.data.local.entity.MachineBrandRateEntity
 import com.mixvendas3d.app.data.local.entity.MachineEntity
 import com.mixvendas3d.app.data.local.entity.MachineInstallmentRateEntity
@@ -15,10 +16,13 @@ import com.mixvendas3d.app.domain.models.InstallmentTiers
 import com.mixvendas3d.app.domain.models.Machine
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 interface MachineRepository {
     fun observeMachines(): Flow<List<Machine>>
+    fun observeLinkedSalesCountByMachine(): Flow<Map<String, Int>> = flowOf(emptyMap())
+    suspend fun countLinkedSales(machineId: String): Int = 0
     suspend fun createMachine(draft: MachineInputDraft): Machine
     suspend fun updateMachine(machineId: String, draft: MachineInputDraft): Machine
     suspend fun setCreditEnabled(machineId: String, creditEnabled: Boolean): Machine
@@ -27,7 +31,9 @@ interface MachineRepository {
 
 class RoomMachineRepository(
     private val machineDao: MachineDao,
-    private val dependencyCountProvider: suspend (String) -> Int = { 0 },
+    private val dependencyCountProvider: suspend (String) -> Int = { machineId ->
+        machineDao.countSalesUsingMachine(machineId)
+    },
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
 ) : MachineRepository {
@@ -36,6 +42,16 @@ class RoomMachineRepository(
         return machineDao.observeAllWithRates().map { rows ->
             rows.map { it.toDomain() }
         }
+    }
+
+    override fun observeLinkedSalesCountByMachine(): Flow<Map<String, Int>> {
+        return machineDao.observeSalesCountsByMachine().map { rows ->
+            rows.associate { it.machineId to it.salesCount }
+        }
+    }
+
+    override suspend fun countLinkedSales(machineId: String): Int {
+        return dependencyCountProvider(machineId)
     }
 
     override suspend fun createMachine(draft: MachineInputDraft): Machine {
@@ -192,14 +208,22 @@ class RoomMachineRepository(
             ?: throw MachineValidationException("Maquininha não encontrada para exclusão.")
         val linkedCount = dependencyCountProvider(machineId)
         if (linkedCount > 0) {
-            throw MachineValidationException(
-                "Não é possível excluir \"${existing.machine.name}\" porque existem $linkedCount registro(s) vinculado(s).",
-            )
+            throw MachineValidationException(buildLinkedSalesBlockMessage(existing.machine.name, linkedCount))
         }
-        val deleted = machineDao.deleteById(machineId)
-        if (deleted == 0) {
-            throw MachineValidationException("Não foi possível excluir a maquininha selecionada.")
+        when (val outcome = machineDao.deleteMachineSafely(machineId)) {
+            MachineDeletionOutcome.Deleted -> Unit
+            MachineDeletionOutcome.NotFound ->
+                throw MachineValidationException("Não foi possível excluir a maquininha selecionada.")
+            is MachineDeletionOutcome.BlockedBySales ->
+                throw MachineValidationException(
+                    buildLinkedSalesBlockMessage(outcome.machineName, outcome.salesCount),
+                )
         }
+    }
+
+    private fun buildLinkedSalesBlockMessage(machineName: String, salesCount: Int): String {
+        val saleLabel = if (salesCount == 1) "1 venda registrada" else "$salesCount vendas registradas"
+        return "Não é possível excluir \"$machineName\" porque ela está vinculada a $saleLabel. O histórico de vendas permanece preservado."
     }
 
     private fun MachineWithRates.toDomain(): Machine {

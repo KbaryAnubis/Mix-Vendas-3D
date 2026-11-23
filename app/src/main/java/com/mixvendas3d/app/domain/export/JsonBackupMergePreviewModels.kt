@@ -169,6 +169,7 @@ class PreviewExecutionContract(
 class PreviewMergedCollections(
     preferences: List<PreferenceDto> = emptyList(),
     people: List<PersonDto> = emptyList(),
+    productCategories: List<ProductCategoryDto> = emptyList(),
     products: List<ProductDto> = emptyList(),
     productParticipants: List<ProductParticipantDto> = emptyList(),
     machines: List<MachineDto> = emptyList(),
@@ -181,6 +182,7 @@ class PreviewMergedCollections(
 ) {
     val preferences: List<PreferenceDto> = Collections.unmodifiableList(preferences.toList())
     val people: List<PersonDto> = Collections.unmodifiableList(people.toList())
+    val productCategories: List<ProductCategoryDto> = Collections.unmodifiableList(productCategories.toList())
     val products: List<ProductDto> = Collections.unmodifiableList(products.toList())
     val productParticipants: List<ProductParticipantDto> = Collections.unmodifiableList(productParticipants.toList())
     val machines: List<MachineDto> = Collections.unmodifiableList(machines.toList())
@@ -199,6 +201,7 @@ class PreviewMergedCollections(
             linkedMapOf(
                 BackupCollectionType.PREFERENCES to preferences.size,
                 BackupCollectionType.PEOPLE to people.size,
+                BackupCollectionType.PRODUCT_CATEGORIES to productCategories.size,
                 BackupCollectionType.PRODUCTS to products.size,
                 BackupCollectionType.PRODUCT_PARTICIPANTS to productParticipants.size,
                 BackupCollectionType.MACHINES to machines.size,
@@ -217,6 +220,7 @@ class PreviewMergedCollections(
         if (other !is PreviewMergedCollections) return false
         return preferences == other.preferences &&
             people == other.people &&
+            productCategories == other.productCategories &&
             products == other.products &&
             productParticipants == other.productParticipants &&
             machines == other.machines &&
@@ -231,6 +235,7 @@ class PreviewMergedCollections(
     override fun hashCode(): Int {
         var result = preferences.hashCode()
         result = 31 * result + people.hashCode()
+        result = 31 * result + productCategories.hashCode()
         result = 31 * result + products.hashCode()
         result = 31 * result + productParticipants.hashCode()
         result = 31 * result + machines.hashCode()

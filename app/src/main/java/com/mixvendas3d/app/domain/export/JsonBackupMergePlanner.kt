@@ -75,13 +75,24 @@ object JsonBackupMergePlanner {
             conflictItems = conflictItems,
         )
 
-        // 3) Products + ProductParticipants (unidade relacionada + dependência de people)
+        // 2.5) ProductCategories (categorias principais antes de subcategorias + colisão de normalizedName)
+        val productCategoriesPlan = planProductCategories(
+            backup = validatedBackup,
+            local = localSnapshot,
+            comparison = comparison.summaryFor(BackupCollectionType.PRODUCT_CATEGORIES),
+            conflictItems = conflictItems,
+            pendingDependencies = pendingDependencies,
+            blockReasons = blockReasons,
+        )
+
+        // 3) Products + ProductParticipants (unidade relacionada + dependência de people e productCategories)
         val (productsPlan, productParticipantsPlan) = planProductsAndParticipants(
             backup = validatedBackup,
             local = localSnapshot,
             productsComp = comparison.summaryFor(BackupCollectionType.PRODUCTS),
             participantsComp = comparison.summaryFor(BackupCollectionType.PRODUCT_PARTICIPANTS),
             peoplePlan = peoplePlan,
+            productCategoriesPlan = productCategoriesPlan,
             conflictItems = conflictItems,
             pendingDependencies = pendingDependencies,
             blockReasons = blockReasons,
@@ -117,6 +128,7 @@ object JsonBackupMergePlanner {
         val collectionPlans = listOf(
             preferencesPlan,
             peoplePlan,
+            productCategoriesPlan,
             productsPlan,
             productParticipantsPlan,
             machinesPlan,
@@ -348,17 +360,231 @@ object JsonBackupMergePlanner {
         )
     }
 
+    private fun planProductCategories(
+        backup: ValidatedBackupData,
+        local: JsonBackupSnapshot,
+        comparison: CollectionComparisonSummary,
+        conflictItems: MutableList<MergeConflictItem>,
+        pendingDependencies: MutableList<PendingDependencyDetail>,
+        blockReasons: MutableList<MergeBlockReason>,
+    ): CollectionMergePlan {
+        val backupById = backup.productCategories.associateBy { it.id }
+        val localById = local.productCategories.associateBy { it.id }
+        val localByScopeAndNorm = local.productCategories.associateBy { (it.parentId ?: "") to it.normalizedName }
+        val entries = ArrayList<PlannedRecordAction>(comparison.totalDistinctRecords)
+        val plannedActionById = HashMap<String, MergePlanAction>()
+
+        // 1) Registros idênticos e somente locais são sempre preservados (e ficam disponíveis como pais)
+        comparison.identicalRecordIds.forEach { id ->
+            plannedActionById[id] = MergePlanAction.KEEP
+            entries.add(
+                PlannedRecordAction(
+                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                    recordId = id,
+                    keyParts = mapOf("id" to id),
+                    comparisonStatus = RecordComparisonStatus.IDENTICAL,
+                    action = MergePlanAction.KEEP,
+                ),
+            )
+        }
+        comparison.localOnlyRecordIds.forEach { id ->
+            plannedActionById[id] = MergePlanAction.KEEP
+            entries.add(
+                PlannedRecordAction(
+                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                    recordId = id,
+                    keyParts = mapOf("id" to id),
+                    comparisonStatus = RecordComparisonStatus.LOCAL_ONLY,
+                    action = MergePlanAction.KEEP,
+                ),
+            )
+        }
+
+        // 2) Processar categorias conflitantes e novas com categorias principais (parentId == null) ANTES das subcategorias
+        val conflictsById = comparison.conflictingRecords.associateBy { it.recordId }
+        val newAndConflictingIds = (comparison.newRecordIds + comparison.conflictingRecordIds).sortedWith(
+            compareBy<String>({ backupById[it]?.parentId != null }, { backupById[it]?.parentId.orEmpty() }, { it }),
+        )
+
+        newAndConflictingIds.forEach { id ->
+            val conflict = conflictsById[id]
+            val cat = backupById.getValue(id)
+            val scopeKey = (cat.parentId ?: "") to cat.normalizedName
+            val collidingLocal = localByScopeAndNorm[scopeKey]?.takeIf { it.id != cat.id }
+
+            if (conflict != null) {
+                plannedActionById[id] = MergePlanAction.CONFLICT
+                entries.add(
+                    PlannedRecordAction(
+                        collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                        recordId = id,
+                        keyParts = conflict.keyParts,
+                        comparisonStatus = RecordComparisonStatus.CONFLICTING,
+                        action = MergePlanAction.CONFLICT,
+                        reason = "Categoria com mesmo ID diverge nos campos: ${conflict.divergentFields.joinToString()}",
+                    ),
+                )
+                conflictItems.add(
+                    MergeConflictItem(
+                        collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                        recordId = id,
+                        keyParts = conflict.keyParts,
+                        kind = MergeConflictKind.SAME_KEY_DATA_DIVERGENCE,
+                        divergentFields = conflict.divergentFields,
+                        collidingLocalRecordId = collidingLocal?.id,
+                        hasFinancialOrRateDivergence = false,
+                        allowedResolutions = STANDARD_RESOLUTIONS,
+                    ),
+                )
+            } else {
+                // Registro NEW
+                val parentId = cat.parentId
+                val parentBlockMsg = when {
+                    parentId == null -> null
+                    parentId == cat.id -> "Categoria '${cat.id}' não pode referenciar a si mesma como categoria principal."
+                    else -> {
+                        val bParent = backupById[parentId]
+                        val lParent = localById[parentId]
+                        when {
+                            bParent == null && lParent == null ->
+                                "Subcategoria '${cat.id}' referencia categoria principal inexistente '$parentId'."
+                            bParent != null && bParent.parentId != null ->
+                                "Subcategoria '${cat.id}' referencia '$parentId' que não é categoria principal."
+                            bParent == null && lParent != null && lParent.parentId != null ->
+                                "Subcategoria '${cat.id}' referencia categoria local '$parentId' que não é categoria principal."
+                            else -> null
+                        }
+                    }
+                }
+
+                when {
+                    parentBlockMsg != null -> {
+                        plannedActionById[id] = MergePlanAction.BLOCKED
+                        blockReasons.add(
+                            MergeBlockReason(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                reason = parentBlockMsg,
+                            ),
+                        )
+                        entries.add(
+                            PlannedRecordAction(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                comparisonStatus = RecordComparisonStatus.NEW,
+                                action = MergePlanAction.BLOCKED,
+                                reason = parentBlockMsg,
+                            ),
+                        )
+                    }
+                    collidingLocal != null -> {
+                        plannedActionById[id] = MergePlanAction.CONFLICT
+                        entries.add(
+                            PlannedRecordAction(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                comparisonStatus = RecordComparisonStatus.NEW,
+                                action = MergePlanAction.CONFLICT,
+                                reason = "Conflito de identidade: categoria '${cat.name}' colide em normalizedName com '${collidingLocal.id}'.",
+                            ),
+                        )
+                        conflictItems.add(
+                            MergeConflictItem(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                kind = MergeConflictKind.IDENTITY_NAME_COLLISION,
+                                divergentFields = listOf("id", "normalizedName"),
+                                collidingLocalRecordId = collidingLocal.id,
+                                hasFinancialOrRateDivergence = false,
+                                allowedResolutions = STANDARD_RESOLUTIONS,
+                            ),
+                        )
+                    }
+                    parentId != null && plannedActionById[parentId] == MergePlanAction.BLOCKED -> {
+                        val msg = "Subcategoria '${cat.id}' bloqueada porque a categoria principal '$parentId' está bloqueada."
+                        plannedActionById[id] = MergePlanAction.BLOCKED
+                        blockReasons.add(
+                            MergeBlockReason(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                reason = msg,
+                            ),
+                        )
+                        entries.add(
+                            PlannedRecordAction(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                comparisonStatus = RecordComparisonStatus.NEW,
+                                action = MergePlanAction.BLOCKED,
+                                reason = msg,
+                            ),
+                        )
+                    }
+                    parentId != null &&
+                        plannedActionById[parentId] != MergePlanAction.ADD &&
+                        plannedActionById[parentId] != MergePlanAction.KEEP -> {
+                        val msg = "Subcategoria '${cat.id}' aguarda resolução da categoria principal '$parentId'."
+                        plannedActionById[id] = MergePlanAction.PENDING_DEPENDENCY
+                        pendingDependencies.add(
+                            PendingDependencyDetail(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                dependsOnRecordId = parentId,
+                                reason = msg,
+                            ),
+                        )
+                        entries.add(
+                            PlannedRecordAction(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                comparisonStatus = RecordComparisonStatus.NEW,
+                                action = MergePlanAction.PENDING_DEPENDENCY,
+                                reason = msg,
+                            ),
+                        )
+                    }
+                    else -> {
+                        plannedActionById[id] = MergePlanAction.ADD
+                        entries.add(
+                            PlannedRecordAction(
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                recordId = id,
+                                keyParts = mapOf("id" to id),
+                                comparisonStatus = RecordComparisonStatus.NEW,
+                                action = MergePlanAction.ADD,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        return CollectionMergePlan(
+            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+            records = entries.sortedBy { it.recordId },
+        )
+    }
+
     private fun planProductsAndParticipants(
         backup: ValidatedBackupData,
         local: JsonBackupSnapshot,
         productsComp: CollectionComparisonSummary,
         participantsComp: CollectionComparisonSummary,
         peoplePlan: CollectionMergePlan,
+        productCategoriesPlan: CollectionMergePlan,
         conflictItems: MutableList<MergeConflictItem>,
         pendingDependencies: MutableList<PendingDependencyDetail>,
         blockReasons: MutableList<MergeBlockReason>,
         relatedUnits: MutableList<RelatedMergeUnit>,
     ): Pair<CollectionMergePlan, CollectionMergePlan> {
+        val backupCategoriesById = backup.productCategories.associateBy { it.id }
+        val localCategoriesById = local.productCategories.associateBy { it.id }
         val backupProducts = backup.products.associateBy { it.id }
         val localProducts = local.products.associateBy { it.id }
         val backupPartsByProd = backup.productParticipants.groupBy { it.productId }
@@ -421,7 +647,7 @@ object JsonBackupMergePlanner {
                     )
                 }
 
-                // Caso B: Produto novo no backup -> validar conjunto e dependências de pessoas
+                // Caso B: Produto novo no backup -> validar conjunto, pessoas e categorias
                 bProd != null && lProd == null -> {
                     val splitValidationError = validateBackupProductSplit(bProd, bParts)
                     val referencedPersonIds = buildSet {
@@ -440,6 +666,27 @@ object JsonBackupMergePlanner {
                     val missingPeople = referencedPersonIds.filter { pid ->
                         peoplePlan.actionForRecord(pid) == null
                     }
+
+                    val categoryBlockError = validateBackupProductCategoryRefsForPlan(
+                        product = bProd,
+                        backupCategoriesById = backupCategoriesById,
+                        localCategoriesById = localCategoriesById,
+                        productCategoriesPlan = productCategoriesPlan,
+                    )
+                    val unresolvedCategories = buildList {
+                        bProd.categoryId?.let { cid ->
+                            val act = productCategoriesPlan.actionForRecord(cid)
+                            if (act != null && act != MergePlanAction.ADD && act != MergePlanAction.KEEP && act != MergePlanAction.BLOCKED) {
+                                add(cid)
+                            }
+                        }
+                        bProd.subcategoryId?.let { sid ->
+                            val act = productCategoriesPlan.actionForRecord(sid)
+                            if (act != null && act != MergePlanAction.ADD && act != MergePlanAction.KEEP && act != MergePlanAction.BLOCKED) {
+                                add(sid)
+                            }
+                        }
+                    }.distinct().sorted()
 
                     val unitAction: MergePlanAction
                     val unitReasons = ArrayList<String>()
@@ -471,7 +718,20 @@ object JsonBackupMergePlanner {
                                 ),
                             )
                         }
-                        unresolvedPeople.isNotEmpty() -> {
+                        categoryBlockError != null -> {
+                            unitAction = MergePlanAction.BLOCKED
+                            unitReasons.add(categoryBlockError)
+                            blockReasons.add(
+                                MergeBlockReason(
+                                    collection = BackupCollectionType.PRODUCTS,
+                                    recordId = productId,
+                                    relatedUnitType = MergeUnitType.PRODUCT,
+                                    relatedUnitId = productId,
+                                    reason = categoryBlockError,
+                                ),
+                            )
+                        }
+                        unresolvedPeople.isNotEmpty() || unresolvedCategories.isNotEmpty() -> {
                             unitAction = MergePlanAction.PENDING_DEPENDENCY
                             unresolvedPeople.forEach { depPersonId ->
                                 val msg = "Produto '$productId' aguarda resolução de conflito na pessoa '$depPersonId'."
@@ -482,6 +742,19 @@ object JsonBackupMergePlanner {
                                         recordId = productId,
                                         dependsOnCollection = BackupCollectionType.PEOPLE,
                                         dependsOnRecordId = depPersonId,
+                                        reason = msg,
+                                    ),
+                                )
+                            }
+                            unresolvedCategories.forEach { depCategoryId ->
+                                val msg = "Produto '$productId' aguarda resolução de conflito na categoria '$depCategoryId'."
+                                unitReasons.add(msg)
+                                pendingDependencies.add(
+                                    PendingDependencyDetail(
+                                        collection = BackupCollectionType.PRODUCTS,
+                                        recordId = productId,
+                                        dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                        dependsOnRecordId = depCategoryId,
                                         reason = msg,
                                     ),
                                 )
@@ -515,13 +788,21 @@ object JsonBackupMergePlanner {
                                 ),
                             )
                         } else if (unitAction == MergePlanAction.PENDING_DEPENDENCY) {
-                            val depPerson = if (bp.personId in unresolvedPeople) bp.personId else unresolvedPeople.first()
+                            val depCollection: BackupCollectionType
+                            val depRecordId: String
+                            if (unresolvedPeople.isNotEmpty()) {
+                                depCollection = BackupCollectionType.PEOPLE
+                                depRecordId = if (bp.personId in unresolvedPeople) bp.personId else unresolvedPeople.first()
+                            } else {
+                                depCollection = BackupCollectionType.PRODUCT_CATEGORIES
+                                depRecordId = unresolvedCategories.first()
+                            }
                             pendingDependencies.add(
                                 PendingDependencyDetail(
                                     collection = BackupCollectionType.PRODUCT_PARTICIPANTS,
                                     recordId = pid,
-                                    dependsOnCollection = BackupCollectionType.PEOPLE,
-                                    dependsOnRecordId = depPerson,
+                                    dependsOnCollection = depCollection,
+                                    dependsOnRecordId = depRecordId,
                                     reason = "Participante '$pid' aguarda resolução do conjunto do produto '$productId'.",
                                 ),
                             )
@@ -548,7 +829,7 @@ object JsonBackupMergePlanner {
                                 BackupCollectionType.PRODUCTS to listOf(productId),
                                 BackupCollectionType.PRODUCT_PARTICIPANTS to bParts.map { "${it.productId}:${it.personId}" },
                             ),
-                            dependencyUnitOrRecordIds = unresolvedPeople,
+                            dependencyUnitOrRecordIds = unresolvedPeople + unresolvedCategories,
                             blockReasons = if (unitAction == MergePlanAction.BLOCKED) unitReasons else emptyList(),
                         ),
                     )
@@ -2154,6 +2435,46 @@ object JsonBackupMergePlanner {
         return null
     }
 
+    private fun validateBackupProductCategoryRefsForPlan(
+        product: ProductDto,
+        backupCategoriesById: Map<String, ProductCategoryDto>,
+        localCategoriesById: Map<String, com.mixvendas3d.app.data.local.entity.ProductCategoryEntity>,
+        productCategoriesPlan: CollectionMergePlan,
+    ): String? {
+        val catId = product.categoryId
+        val subId = product.subcategoryId
+        if (subId != null && catId == null) {
+            return "Produto '${product.id}' define subcategoryId '$subId' sem categoryId."
+        }
+        if (catId != null) {
+            val act = productCategoriesPlan.actionForRecord(catId)
+            if (act == null) {
+                return "Produto '${product.id}' referencia categoria inexistente '$catId'."
+            }
+            if (act == MergePlanAction.BLOCKED) {
+                return "Produto '${product.id}' referencia categoria bloqueada '$catId'."
+            }
+            val effectiveParent = backupCategoriesById[catId]?.parentId ?: localCategoriesById[catId]?.parentId
+            if (effectiveParent != null) {
+                return "Produto '${product.id}' referencia '$catId' em categoryId, mas ela é uma subcategoria."
+            }
+        }
+        if (subId != null) {
+            val act = productCategoriesPlan.actionForRecord(subId)
+            if (act == null) {
+                return "Produto '${product.id}' referencia subcategoria inexistente '$subId'."
+            }
+            if (act == MergePlanAction.BLOCKED) {
+                return "Produto '${product.id}' referencia subcategoria bloqueada '$subId'."
+            }
+            val effectiveParent = backupCategoriesById[subId]?.parentId ?: localCategoriesById[subId]?.parentId
+            if (effectiveParent != catId) {
+                return "Subcategoria '$subId' do produto '${product.id}' não pertence à categoria '$catId'."
+            }
+        }
+        return null
+    }
+
     private fun validateBackupMachineRates(
         machine: MachineDto,
         brandRates: List<MachineBrandRateDto>,
@@ -2367,9 +2688,13 @@ object JsonBackupMergePlanner {
         snapshot.people.sortedBy { it.id }.forEach {
             feed("${it.id}|${it.name}|${it.normalizedName}|${it.colorIndex}|${it.createdAtEpochMs}|${it.updatedAtEpochMs}")
         }
+        feed("productCategories:${snapshot.productCategories.size}")
+        snapshot.productCategories.sortedBy { it.id }.forEach {
+            feed("${it.id}|${it.name}|${it.normalizedName}|${it.parentId}|${it.createdAtEpochMs}|${it.updatedAtEpochMs}")
+        }
         feed("products:${snapshot.products.size}")
         snapshot.products.sortedBy { it.id }.forEach {
-            feed("${it.id}|${it.name}|${it.priceCents}|${it.active}|${it.feeResponsibilityMode}|${it.feeOwnerPersonId}|${it.createdAtEpochMs}|${it.updatedAtEpochMs}")
+            feed("${it.id}|${it.name}|${it.priceCents}|${it.active}|${it.feeResponsibilityMode}|${it.feeOwnerPersonId}|${it.categoryId}|${it.subcategoryId}|${it.createdAtEpochMs}|${it.updatedAtEpochMs}")
         }
         feed("productParticipants:${snapshot.productParticipants.size}")
         snapshot.productParticipants.sortedWith(compareBy({ it.productId }, { it.personId })).forEach {

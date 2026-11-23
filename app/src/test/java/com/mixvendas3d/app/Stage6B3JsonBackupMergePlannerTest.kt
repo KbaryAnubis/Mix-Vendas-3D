@@ -168,7 +168,7 @@ class Stage6B3JsonBackupMergePlannerTest {
             val readResult = JsonBackupReader.readAndValidate(exported.jsonContent)
             val plan = JsonBackupMergePlanner.plan(readResult, localDb)
 
-            assertEquals(11, plan.collectionPlans.size)
+            assertEquals(12, plan.collectionPlans.size)
             assertEquals(0, plan.totalAnalyzedRecords)
             assertEquals(0, plan.candidateAdditionsCount)
             assertEquals(0, plan.keptRecordsCount)

@@ -140,7 +140,7 @@ class Stage6B2JsonBackupComparatorTest {
             val readResult = JsonBackupReader.readAndValidate(exported.jsonContent)
             val comparison = JsonBackupComparator.compare(readResult, localDb)
 
-            assertEquals(11, comparison.collectionSummaries.size)
+            assertEquals(12, comparison.collectionSummaries.size)
             assertEquals(0, comparison.totalBackupRecords)
             assertEquals(0, comparison.totalLocalRecords)
             assertEquals(0, comparison.totalNewCount)

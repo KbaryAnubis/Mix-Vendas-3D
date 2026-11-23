@@ -86,6 +86,8 @@ internal object BackupConflictFormatter {
 
         val localProductsById = localSnapshot.products.associateBy { it.id }
         val backupProductsById = validatedBackup.products.associateBy { it.id }
+        val localCategoriesById = localSnapshot.productCategories.associateBy { it.id }
+        val backupCategoriesById = validatedBackup.productCategories.associateBy { it.id }
         val localProdPartsByProd = localSnapshot.productParticipants.groupBy { it.productId }
         val backupProdPartsByProd = validatedBackup.productParticipants.groupBy { it.productId }
 
@@ -123,6 +125,15 @@ internal object BackupConflictFormatter {
                             add("Nome: ${lProd.name}")
                             add("Preço: ${formatMoney(lProd.priceCents)}")
                             add("Status: ${if (lProd.active) "Ativo" else "Inativo"}")
+                            val lCatText = formatCategoryPath(
+                                categoryId = lProd.categoryId,
+                                subcategoryId = lProd.subcategoryId,
+                                primaryNames = localCategoriesById.mapValues { it.value.name },
+                                secondaryNames = backupCategoriesById.mapValues { it.value.name },
+                            )
+                            if (lCatText != null) {
+                                add("Categoria: $lCatText")
+                            }
                             add("Divisão por pessoa: ${formatProductSplits(lParts, localPeopleById.mapValues { it.value.name }, backupPeopleById.mapValues { it.value.name })}")
                             add("Tarifa: ${formatFeeMode(lProd.feeResponsibilityMode, lProd.feeOwnerPersonId, localPeopleById.mapValues { it.value.name }, backupPeopleById.mapValues { it.value.name })}")
                         }
@@ -135,6 +146,15 @@ internal object BackupConflictFormatter {
                             add("Nome: ${bProd.name}")
                             add("Preço: ${formatMoney(bProd.priceCents)}")
                             add("Status: ${if (bProd.active) "Ativo" else "Inativo"}")
+                            val bCatText = formatCategoryPath(
+                                categoryId = bProd.categoryId,
+                                subcategoryId = bProd.subcategoryId,
+                                primaryNames = backupCategoriesById.mapValues { it.value.name },
+                                secondaryNames = localCategoriesById.mapValues { it.value.name },
+                            )
+                            if (bCatText != null) {
+                                add("Categoria: $bCatText")
+                            }
                             add("Divisão por pessoa: ${formatProductSplits(bParts, backupPeopleById.mapValues { it.value.name }, localPeopleById.mapValues { it.value.name })}")
                             add("Tarifa: ${formatFeeMode(bProd.feeResponsibilityMode, bProd.feeOwnerPersonId, backupPeopleById.mapValues { it.value.name }, localPeopleById.mapValues { it.value.name })}")
                         }
@@ -340,6 +360,52 @@ internal object BackupConflictFormatter {
                     )
                 }
 
+                primary.collection == BackupCollectionType.PRODUCT_CATEGORIES -> {
+                    val catId = primary.recordId
+                    val lCat = localCategoriesById[catId]
+                        ?: primary.collidingLocalRecordId?.let { localCategoriesById[it] }
+                    val bCat = backupCategoriesById[catId]
+                    val isSub = (bCat?.parentId ?: lCat?.parentId) != null
+
+                    val lLines = if (lCat == null) {
+                        listOf("Não cadastrada no celular.")
+                    } else {
+                        buildList {
+                            add("Nome: ${lCat.name}")
+                            lCat.parentId?.let { pid ->
+                                val parentName = localCategoriesById[pid]?.name ?: backupCategoriesById[pid]?.name ?: pid
+                                add("Categoria principal: $parentName")
+                            }
+                            if (primary.kind == MergeConflictKind.IDENTITY_NAME_COLLISION) {
+                                add("Cadastro existente no celular com este mesmo nome.")
+                            }
+                        }
+                    }
+
+                    val bLines = if (bCat == null) {
+                        listOf("Não presente no backup.")
+                    } else {
+                        buildList {
+                            add("Nome: ${bCat.name}")
+                            bCat.parentId?.let { pid ->
+                                val parentName = backupCategoriesById[pid]?.name ?: localCategoriesById[pid]?.name ?: pid
+                                add("Categoria principal: $parentName")
+                            }
+                            if (primary.kind == MergeConflictKind.IDENTITY_NAME_COLLISION) {
+                                add("Registro do backup com outro identificador para o mesmo nome.")
+                            }
+                        }
+                    }
+
+                    BackupConflictVisualDetails(
+                        typeLabel = if (isSub) "Subcategoria" else "Categoria",
+                        title = lCat?.name ?: bCat?.name ?: if (isSub) "Subcategoria" else "Categoria",
+                        localDataLines = lLines,
+                        backupDataLines = bLines,
+                        isAtomicUnit = false,
+                    )
+                }
+
                 else -> {
                     val key = primary.recordId
                     val lPref = localPrefsByKey[key]
@@ -484,6 +550,7 @@ internal object BackupConflictFormatter {
             MergeUnitType.SALE -> "Venda"
             null -> when (primary.collection) {
                 BackupCollectionType.PEOPLE -> "Pessoa"
+                BackupCollectionType.PRODUCT_CATEGORIES -> "Categoria"
                 BackupCollectionType.PREFERENCES -> "Configuração"
                 else -> "Registro"
             }
@@ -570,10 +637,25 @@ internal object BackupConflictFormatter {
         }
     }
 
+    private fun formatCategoryPath(
+        categoryId: String?,
+        subcategoryId: String?,
+        primaryNames: Map<String, String>,
+        secondaryNames: Map<String, String>,
+    ): String? {
+        if (categoryId == null && subcategoryId == null) return null
+        val catName = categoryId?.let { primaryNames[it] ?: secondaryNames[it] ?: it }
+        val subName = subcategoryId?.let { primaryNames[it] ?: secondaryNames[it] ?: it }
+        return listOfNotNull(catName, subName).joinToString(" / ")
+    }
+
     private fun friendlyFieldLabel(collection: BackupCollectionType, field: String): String {
         return when (field) {
             "name" -> "Nome"
             "normalizedName" -> "Nome de identificação"
+            "parentId" -> "Categoria principal"
+            "categoryId" -> "Categoria"
+            "subcategoryId" -> "Subcategoria"
             "colorIndex" -> "Cor de identificação"
             "value" -> "Valor"
             "priceCents" -> "Preço"

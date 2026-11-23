@@ -321,8 +321,8 @@ class StageV25B2MachinePickerTest {
                     ),
                 ),
             )
-            // Exclui a maquininha histórica do catálogo após salvar a venda
-            app.machineRepository.deleteMachine(histMachine.id)
+            // Remove a maquininha histórica direto na tabela Room após salvar a venda (simulando catálogo sem ela)
+            app.database.machineDao().deleteById(histMachine.id)
             Triple(savedSale.id, histMachine.id, currentMachine.id)
         }
 

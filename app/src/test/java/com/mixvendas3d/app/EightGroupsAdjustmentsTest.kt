@@ -931,8 +931,13 @@ class EightGroupsAdjustmentsTest {
                 ),
             ),
         )
-        // 3) Exclui a maquininha do cadastro
-        application.machineRepository.deleteMachine(machine.id)
+        // 3) Verifica bloqueio pelo repositório e remove direto no DAO para validar imutabilidade do snapshot
+        val blockedEx = runCatching {
+            application.machineRepository.deleteMachine(machine.id)
+        }.exceptionOrNull()
+        assertTrue(blockedEx is com.mixvendas3d.app.domain.calculation.MachineValidationException)
+        assertTrue(blockedEx?.message.orEmpty().contains("2 vendas"))
+        application.database.machineDao().deleteById(machine.id)
 
         // Valida que AMBAS as vendas históricas permanecem 100% idênticas no Room
         val reloaded = application.saleRepository.observeSales().first().associateBy { it.id }

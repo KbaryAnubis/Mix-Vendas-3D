@@ -76,6 +76,7 @@ data class MachineEditorUiState(
 
 data class MachinesUiState(
     val machines: List<Machine> = emptyList(),
+    val linkedSalesCountByMachineId: Map<String, Int> = emptyMap(),
     val searchQuery: String = "",
     val feedbackMessage: String? = null,
     val errorMessage: String? = null,
@@ -120,10 +121,12 @@ class MachinesViewModel(
 
     val uiState: StateFlow<MachinesUiState> = combine(
         filteredMachinesFlow,
+        machineRepository.observeLinkedSalesCountByMachine().onStart { emit(emptyMap()) },
         formFlow,
-    ) { (machines, filteredMachines), form ->
+    ) { (machines, filteredMachines), linkedSalesCounts, form ->
         MachinesUiState(
             machines = machines,
+            linkedSalesCountByMachineId = linkedSalesCounts,
             searchQuery = form.searchQuery,
             feedbackMessage = form.feedbackMessage,
             errorMessage = form.errorMessage,

@@ -6,6 +6,7 @@ import com.mixvendas3d.app.data.local.entity.MachineEntity
 import com.mixvendas3d.app.data.local.entity.MachineInstallmentRateEntity
 import com.mixvendas3d.app.data.local.entity.PersonEntity
 import com.mixvendas3d.app.data.local.entity.PreferenceEntity
+import com.mixvendas3d.app.data.local.entity.ProductCategoryEntity
 import com.mixvendas3d.app.data.local.entity.ProductEntity
 import com.mixvendas3d.app.data.local.entity.ProductParticipantEntity
 import com.mixvendas3d.app.data.local.entity.SaleEntity
@@ -424,6 +425,66 @@ object JsonBackupMergePreviewBuilder {
                 }
             }
 
+        // --- B.5) PRODUCT_CATEGORIES ---
+        val localCatsById = localSnapshot.productCategories.associateBy { it.id }
+        val backupCatsById = validatedBackup.productCategories.associateBy { it.id }
+        val finalProductCategories = ArrayList<ProductCategoryDto>()
+        val catActionsById = plan.planFor(BackupCollectionType.PRODUCT_CATEGORIES).records.associateBy { it.recordId }
+
+        validation.eligibleStandaloneRecords
+            .filter { it.collection == BackupCollectionType.PRODUCT_CATEGORIES }
+            .forEach { rec ->
+                val planned = catActionsById[rec.recordId]
+                when (rec.disposition) {
+                    EligibleOperationDisposition.ADD_NEW -> {
+                        val b = backupCatsById.getValue(rec.recordId)
+                        finalProductCategories.add(b)
+                        newRecordsCount += 1
+                        changedEntries.add(
+                            PreviewChangedEntry(
+                                scope = PreviewChangeScope.STANDALONE_RECORD,
+                                operation = PreviewChangeOperation.ADD,
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                targetId = rec.recordId,
+                                memberCountsByCollection = mapOf(BackupCollectionType.PRODUCT_CATEGORIES to 1),
+                            ),
+                        )
+                    }
+                    EligibleOperationDisposition.KEEP_EXISTING -> {
+                        val l = localCatsById.getValue(rec.recordId)
+                        finalProductCategories.add(l.toDto())
+                        keptRecordsCount += 1
+                        if (planned?.comparisonStatus == RecordComparisonStatus.LOCAL_ONLY) {
+                            localOnlyPreservedCount += 1
+                        }
+                    }
+                    EligibleOperationDisposition.APPLY_BACKUP -> {
+                        val b = backupCatsById.getValue(rec.recordId)
+                        finalProductCategories.add(b)
+                        unitsToReplaceCount += 1
+                        changedEntries.add(
+                            PreviewChangedEntry(
+                                scope = PreviewChangeScope.STANDALONE_RECORD,
+                                operation = PreviewChangeOperation.REPLACE,
+                                collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                targetId = rec.recordId,
+                                memberCountsByCollection = mapOf(BackupCollectionType.PRODUCT_CATEGORIES to 1),
+                            ),
+                        )
+                    }
+                    EligibleOperationDisposition.SKIP_BACKUP -> {
+                        val l = localCatsById[rec.recordId]
+                        if (l != null) {
+                            finalProductCategories.add(l.toDto())
+                            keptRecordsCount += 1
+                        }
+                        if (backupCatsById.containsKey(rec.recordId)) {
+                            ignoredRecordsCount += 1
+                        }
+                    }
+                }
+            }
+
         // --- C) PRODUCTS + PRODUCT_PARTICIPANTS (Unidade Atômica) ---
         val localProdsById = localSnapshot.products.associateBy { it.id }
         val localPartsByProd = localSnapshot.productParticipants.groupBy { it.productId }
@@ -702,10 +763,13 @@ object JsonBackupMergePreviewBuilder {
                 }
             }
 
-        // Ordenação determinística das 11 coleções construídas
+        // Ordenação determinística das 12 coleções construídas
         val mergedCollections = PreviewMergedCollections(
             preferences = finalPreferences.sortedBy { it.key },
             people = finalPeople.sortedWith(compareBy<PersonDto> { it.createdAtEpochMs }.thenBy { it.id }),
+            productCategories = finalProductCategories.sortedWith(
+                compareBy<ProductCategoryDto>({ it.parentId != null }, { it.parentId ?: "" }, { it.normalizedName }, { it.id }),
+            ),
             products = finalProducts.sortedWith(compareBy<ProductDto> { it.createdAtEpochMs }.thenBy { it.id }),
             productParticipants = finalProductParticipants.sortedWith(
                 compareBy<ProductParticipantDto> { it.productId }.thenBy { it.personId },
@@ -851,6 +915,7 @@ object JsonBackupMergePreviewBuilder {
         val mergedIdsByCollection = mapOf(
             BackupCollectionType.PREFERENCES to mergedCollections.preferences.map { it.key }.toHashSet(),
             BackupCollectionType.PEOPLE to mergedCollections.people.map { it.id }.toHashSet(),
+            BackupCollectionType.PRODUCT_CATEGORIES to mergedCollections.productCategories.map { it.id }.toHashSet(),
             BackupCollectionType.PRODUCTS to mergedCollections.products.map { it.id }.toHashSet(),
             BackupCollectionType.PRODUCT_PARTICIPANTS to mergedCollections.productParticipants.map { "${it.productId}:${it.personId}" }.toHashSet(),
             BackupCollectionType.MACHINES to mergedCollections.machines.map { it.id }.toHashSet(),
@@ -984,6 +1049,8 @@ object JsonBackupMergePreviewBuilder {
                     active = it.active,
                     feeResponsibilityMode = it.feeResponsibilityMode,
                     feeOwnerPersonId = it.feeOwnerPersonId,
+                    categoryId = it.categoryId,
+                    subcategoryId = it.subcategoryId,
                     createdAtEpochMs = it.createdAtEpochMs,
                     updatedAtEpochMs = it.updatedAtEpochMs,
                 )
@@ -1016,6 +1083,7 @@ object JsonBackupMergePreviewBuilder {
             saleItems = backup.saleItems.map { it.toEntity() },
             saleItemParticipants = backup.saleItemParticipants.map { it.toEntity() },
             salePersonTotals = backup.salePersonTotals.map { it.toEntity() },
+            productCategories = backup.productCategories.map { it.toEntity() },
         )
         val payloadHash = JsonBackupMergePlanner.computeLocalSnapshotFingerprint(dtoSnapshot)
         val digest = MessageDigest.getInstance("SHA-256")
@@ -1045,6 +1113,7 @@ object JsonBackupMergePreviewBuilder {
         return mapOf(
             BackupCollectionType.PREFERENCES to snapshot.preferences.size,
             BackupCollectionType.PEOPLE to snapshot.people.size,
+            BackupCollectionType.PRODUCT_CATEGORIES to snapshot.productCategories.size,
             BackupCollectionType.PRODUCTS to snapshot.products.size,
             BackupCollectionType.PRODUCT_PARTICIPANTS to snapshot.productParticipants.size,
             BackupCollectionType.MACHINES to snapshot.machines.size,
@@ -1062,6 +1131,9 @@ object JsonBackupMergePreviewBuilder {
             preferences = snapshot.preferences.map { it.toDto() }.sortedBy { it.key },
             people = snapshot.people.map { it.toDto() }.sortedWith(
                 compareBy<PersonDto> { it.createdAtEpochMs }.thenBy { it.id },
+            ),
+            productCategories = snapshot.productCategories.map { it.toDto() }.sortedWith(
+                compareBy<ProductCategoryDto>({ it.parentId != null }, { it.parentId ?: "" }, { it.normalizedName }, { it.id }),
             ),
             products = snapshot.products.map { it.toDto() }.sortedWith(
                 compareBy<ProductDto> { it.createdAtEpochMs }.thenBy { it.id },
@@ -1107,6 +1179,8 @@ object JsonBackupMergePreviewBuilder {
                     active = it.active,
                     feeResponsibilityMode = it.feeResponsibilityMode,
                     feeOwnerPersonId = it.feeOwnerPersonId,
+                    categoryId = it.categoryId,
+                    subcategoryId = it.subcategoryId,
                     createdAtEpochMs = it.createdAtEpochMs,
                     updatedAtEpochMs = it.updatedAtEpochMs,
                 )
@@ -1139,6 +1213,7 @@ object JsonBackupMergePreviewBuilder {
             saleItems = collections.saleItems.map { it.toEntity() },
             saleItemParticipants = collections.saleItemParticipants.map { it.toEntity() },
             salePersonTotals = collections.salePersonTotals.map { it.toEntity() },
+            productCategories = collections.productCategories.map { it.toEntity() },
         )
     }
 
@@ -1157,6 +1232,24 @@ object JsonBackupMergePreviewBuilder {
 
     private fun PersonEntity.toDto() = PersonDto(id, name, normalizedName, colorIndex, createdAtEpochMs, updatedAtEpochMs)
 
+    private fun ProductCategoryEntity.toDto() = ProductCategoryDto(
+        id = id,
+        name = name,
+        normalizedName = normalizedName,
+        parentId = parentId,
+        createdAtEpochMs = createdAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+    )
+
+    private fun ProductCategoryDto.toEntity() = ProductCategoryEntity(
+        id = id,
+        name = name,
+        normalizedName = normalizedName,
+        parentId = parentId,
+        createdAtEpochMs = createdAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+    )
+
     private fun ProductEntity.toDto() = ProductDto(
         id = id,
         name = name,
@@ -1164,6 +1257,8 @@ object JsonBackupMergePreviewBuilder {
         active = active,
         feeResponsibilityMode = feeResponsibilityMode,
         feeOwnerPersonId = feeOwnerPersonId,
+        categoryId = categoryId,
+        subcategoryId = subcategoryId,
         createdAtEpochMs = createdAtEpochMs,
         updatedAtEpochMs = updatedAtEpochMs,
     )

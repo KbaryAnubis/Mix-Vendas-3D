@@ -652,7 +652,7 @@ class Stage3B2B1SaleEditTest {
                     installmentAddonsBps = emptyMap(),
                 ),
             )
-            app.machineRepository.deleteMachine(histMachine.id)
+            app.database.machineDao().deleteById(histMachine.id)
 
             listOf(saved.id, deletedProd.id, changedProd.id, newProd.id, histMachine.id, newMachine.id)
         }

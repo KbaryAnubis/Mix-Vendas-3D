@@ -511,12 +511,17 @@ class Stage6D3aJsonBackupConflictResolutionUiTest {
 
         waitUiUntil {
             runCatching {
+                composeRule.onNodeWithTag("conflict_choice_${unitKey}_USE_BACKUP")
+                    .assertIsEnabled()
+                    .assert(isSelected())
                 composeRule.onNodeWithTag("conflict_unit_issue_$unitKey")
                     .assertTextContains("colisão de normalizedName", substring = true)
                 true
             }.getOrDefault(false)
         }
-        composeRule.onNodeWithTag("conflict_choice_${unitKey}_USE_BACKUP").assert(isSelected())
+        composeRule.onNodeWithTag("conflict_choice_${unitKey}_USE_BACKUP")
+            .assertIsEnabled()
+            .assert(isSelected())
         composeRule.onNodeWithTag("conflicts_pending_count").performScrollTo().assertTextContains("0")
         composeRule.onNodeWithTag("review_restore_button").performScrollTo().assertIsNotEnabled()
 
@@ -527,12 +532,17 @@ class Stage6D3aJsonBackupConflictResolutionUiTest {
 
         waitUiUntil {
             runCatching {
+                composeRule.onNodeWithTag("conflict_choice_${unitKey}_KEEP_LOCAL")
+                    .assertIsEnabled()
+                    .assert(isSelected())
                 composeRule.onNodeWithTag("conflict_validation_issues_banner")
                     .assertTextContains("sem remapeamento", substring = true)
                 true
             }.getOrDefault(false)
         }
-        composeRule.onNodeWithTag("conflict_choice_${unitKey}_KEEP_LOCAL").assert(isSelected())
+        composeRule.onNodeWithTag("conflict_choice_${unitKey}_KEEP_LOCAL")
+            .assertIsEnabled()
+            .assert(isSelected())
         composeRule.onNodeWithTag("review_restore_button").performScrollTo().assertIsNotEnabled()
     }
 

@@ -6,6 +6,7 @@ import com.mixvendas3d.app.data.local.entity.MachineEntity
 import com.mixvendas3d.app.data.local.entity.MachineInstallmentRateEntity
 import com.mixvendas3d.app.data.local.entity.PersonEntity
 import com.mixvendas3d.app.data.local.entity.PreferenceEntity
+import com.mixvendas3d.app.data.local.entity.ProductCategoryEntity
 import com.mixvendas3d.app.data.local.entity.ProductEntity
 import com.mixvendas3d.app.data.local.entity.ProductParticipantEntity
 import com.mixvendas3d.app.data.local.entity.SaleEntity
@@ -99,6 +100,17 @@ object JsonBackupComparator {
             recordIdFormatter = { it },
             keyPartsExtractor = { mapOf("id" to it) },
             diffExtractor = ::diffPerson,
+        )
+
+        val productCategoriesSummary = compareCollection(
+            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+            backupItems = backup.productCategories,
+            localItems = local.productCategories,
+            backupKey = { it.id },
+            localKey = { it.id },
+            recordIdFormatter = { it },
+            keyPartsExtractor = { mapOf("id" to it) },
+            diffExtractor = ::diffProductCategory,
         )
 
         val productsSummary = compareCollection(
@@ -203,6 +215,7 @@ object JsonBackupComparator {
         val allSummaries = listOf(
             preferencesSummary,
             peopleSummary,
+            productCategoriesSummary,
             productsSummary,
             productParticipantsSummary,
             machinesSummary,
@@ -338,6 +351,23 @@ object JsonBackupComparator {
                         recordId = bPerson.id,
                         relatedRecordId = lPerson.id,
                         message = "Conflito de unicidade em people.normalizedName para '${bPerson.id}' (local existente: '${lPerson.id}').",
+                    ),
+                )
+            }
+        }
+
+        // 1.5) Colisão de unicidade (parentId, normalizedName) em productCategories com IDs diferentes
+        val localCategoriesByKey = local.productCategories.associateBy { it.parentId to it.normalizedName }
+        backup.productCategories.sortedBy { it.id }.forEach { bCat ->
+            val lCat = localCategoriesByKey[bCat.parentId to bCat.normalizedName]
+            if (lCat != null && lCat.id != bCat.id) {
+                risks.add(
+                    RelationalConflictRisk(
+                        type = RelationalRiskType.UNIQUE_NAME_COLLISION,
+                        collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                        recordId = bCat.id,
+                        relatedRecordId = lCat.id,
+                        message = "Conflito de unicidade em productCategories.(parentId, normalizedName) para '${bCat.id}' (local existente: '${lCat.id}').",
                     ),
                 )
             }
@@ -550,6 +580,14 @@ object JsonBackupComparator {
         if (b.name != l.name) add("name")
         if (b.normalizedName != l.normalizedName) add("normalizedName")
         if (b.colorIndex != l.colorIndex) add("colorIndex")
+        if (b.createdAtEpochMs != l.createdAtEpochMs) add("createdAtEpochMs")
+        if (b.updatedAtEpochMs != l.updatedAtEpochMs) add("updatedAtEpochMs")
+    }
+
+    private fun diffProductCategory(b: ProductCategoryDto, l: ProductCategoryEntity): List<String> = buildList {
+        if (b.name != l.name) add("name")
+        if (b.normalizedName != l.normalizedName) add("normalizedName")
+        if (b.parentId != l.parentId) add("parentId")
         if (b.createdAtEpochMs != l.createdAtEpochMs) add("createdAtEpochMs")
         if (b.updatedAtEpochMs != l.updatedAtEpochMs) add("updatedAtEpochMs")
     }

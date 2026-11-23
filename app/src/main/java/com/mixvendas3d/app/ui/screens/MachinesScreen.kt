@@ -366,13 +366,20 @@ fun MachinesScreen(
     }
 
     pendingDeleteTarget?.let { target ->
+        val linkedSalesCount = uiState.linkedSalesCountByMachineId[target.id] ?: 0
+        val isBlockedBySales = linkedSalesCount > 0
+        val salesLabel = if (linkedSalesCount == 1) {
+            "1 venda registrada"
+        } else {
+            "$linkedSalesCount vendas registradas"
+        }
         AlertDialog(
             onDismissRequest = { pendingDeleteTarget = null },
             containerColor = V19SurfaceCard,
             modifier = Modifier.testTag("delete_machine_dialog"),
             title = {
                 Text(
-                    text = "Excluir maquininha?",
+                    text = if (isBlockedBySales) "Exclusão bloqueada" else "Excluir maquininha?",
                     fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = V19InkPrimary,
@@ -380,7 +387,11 @@ fun MachinesScreen(
             },
             text = {
                 Text(
-                    text = "Deseja excluir \"${target.name}\" e todas as suas tarifas do banco local? Esta ação não pode ser desfeita. O histórico de vendas já registradas permanece preservado.",
+                    text = if (isBlockedBySales) {
+                        "Não é possível excluir \"${target.name}\" porque ela está vinculada a $salesLabel. Para preservar o histórico e os snapshots financeiros, a exclusão não é permitida."
+                    } else {
+                        "Deseja excluir \"${target.name}\" e todas as suas tarifas do banco local? Esta ação não pode ser desfeita."
+                    },
                     fontFamily = PlusJakartaSansFontFamily,
                     color = V19InkMuted,
                 )
@@ -391,9 +402,12 @@ fun MachinesScreen(
                         pendingDeleteTarget = null
                         onDeleteMachine(target.id)
                     },
+                    enabled = !isBlockedBySales,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = V19ErrorSoft.copy(alpha = 0.25f),
                         contentColor = V19ErrorSoft,
+                        disabledContainerColor = V19InkMuted.copy(alpha = 0.16f),
+                        disabledContentColor = V19InkMuted,
                     ),
                     modifier = Modifier.testTag("confirm_delete_machine_button"),
                 ) {
@@ -405,7 +419,11 @@ fun MachinesScreen(
                     onClick = { pendingDeleteTarget = null },
                     modifier = Modifier.testTag("cancel_delete_machine_button"),
                 ) {
-                    Text("Cancelar", fontFamily = PlusJakartaSansFontFamily, color = V19PurpleSoftText)
+                    Text(
+                        text = if (isBlockedBySales) "Entendi" else "Cancelar",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        color = V19PurpleSoftText,
+                    )
                 }
             },
         )

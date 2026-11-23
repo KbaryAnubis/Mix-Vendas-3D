@@ -675,7 +675,7 @@ class Stage3B1SalePersistenceTest {
                 installmentAddonsBps = emptyMap(),
             ),
         )
-        machineRepo.deleteMachine(machine.id)
+        db.machineDao().deleteById(machine.id)
 
         // A venda salva precisa permanecer 100% intacta com os dados históricos
         val historical = saleRepo.getSaleById(sale.id)!!

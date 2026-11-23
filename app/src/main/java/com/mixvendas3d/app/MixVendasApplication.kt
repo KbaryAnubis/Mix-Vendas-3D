@@ -30,6 +30,9 @@ class MixVendasApplication : Application() {
     val machineRepository: MachineRepository by lazy {
         RoomMachineRepository(
             machineDao = database.machineDao(),
+            dependencyCountProvider = { machineId ->
+                database.saleDao().countSalesUsingMachine(machineId)
+            },
         )
     }
 

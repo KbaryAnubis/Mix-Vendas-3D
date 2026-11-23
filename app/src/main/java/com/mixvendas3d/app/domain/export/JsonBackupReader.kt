@@ -571,7 +571,7 @@ object JsonBackupReader {
         }
 
         val actualCounts = summary.allCollectionsCounts
-        COLLECTION_KEYS.forEach { key ->
+        KNOWN_COLLECTION_KEYS.forEach { key ->
             val declared = document.counts[key]
             val actual = actualCounts.getValue(key)
             if (declared == null) {

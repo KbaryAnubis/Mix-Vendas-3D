@@ -1,5 +1,6 @@
 package com.mixvendas3d.app.data.local.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -11,6 +12,17 @@ import com.mixvendas3d.app.data.local.entity.MachineEntity
 import com.mixvendas3d.app.data.local.entity.MachineInstallmentRateEntity
 import com.mixvendas3d.app.data.local.entity.MachineWithRates
 import kotlinx.coroutines.flow.Flow
+
+data class MachineSalesCountRow(
+    @ColumnInfo(name = "machine_id") val machineId: String,
+    @ColumnInfo(name = "sales_count") val salesCount: Int,
+)
+
+sealed interface MachineDeletionOutcome {
+    data object Deleted : MachineDeletionOutcome
+    data object NotFound : MachineDeletionOutcome
+    data class BlockedBySales(val machineName: String, val salesCount: Int) : MachineDeletionOutcome
+}
 
 @Dao
 interface MachineDao {
@@ -33,6 +45,19 @@ interface MachineDao {
 
     @Query("SELECT * FROM machine_installment_rates ORDER BY machine_id ASC, installments ASC")
     suspend fun getAllInstallmentRates(): List<MachineInstallmentRateEntity>
+
+    @Query("SELECT COUNT(*) FROM sales WHERE machine_id = :machineId")
+    suspend fun countSalesUsingMachine(machineId: String): Int
+
+    @Query(
+        """
+        SELECT machine_id, COUNT(*) AS sales_count
+        FROM sales
+        WHERE machine_id IS NOT NULL
+        GROUP BY machine_id
+        """,
+    )
+    fun observeSalesCountsByMachine(): Flow<List<MachineSalesCountRow>>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMachine(machine: MachineEntity)
@@ -69,6 +94,20 @@ interface MachineDao {
 
     @Query("DELETE FROM machines WHERE id = :machineId")
     suspend fun deleteById(machineId: String): Int
+
+    @Transaction
+    suspend fun deleteMachineSafely(machineId: String): MachineDeletionOutcome {
+        val existing = getWithRatesById(machineId) ?: return MachineDeletionOutcome.NotFound
+        val linkedSales = countSalesUsingMachine(machineId)
+        if (linkedSales > 0) {
+            return MachineDeletionOutcome.BlockedBySales(existing.machine.name, linkedSales)
+        }
+        return if (deleteById(machineId) > 0) {
+            MachineDeletionOutcome.Deleted
+        } else {
+            MachineDeletionOutcome.NotFound
+        }
+    }
 
     @Transaction
     suspend fun upsertMachineWithRates(

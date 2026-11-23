@@ -91,6 +91,24 @@ interface ProductDao {
     }
 
     @Transaction
+    suspend fun updateCategoryIfUnique(category: ProductCategoryEntity): Boolean {
+        getCategoryById(category.id) ?: return false
+        if (category.parentId != null) {
+            if (category.parentId == category.id) return false
+            val parent = getCategoryById(category.parentId) ?: return false
+            if (parent.parentId != null) return false
+            if (getSubcategories(category.id).isNotEmpty()) return false
+        }
+        if (getCategoryByParentAndNormalizedName(category.parentId, category.normalizedName)
+                ?.let { it.id != category.id } == true
+        ) {
+            return false
+        }
+        updateCategory(category)
+        return true
+    }
+
+    @Transaction
     suspend fun deleteCategorySafely(categoryId: String): ProductCategoryDeletionResult {
         val category = getCategoryById(categoryId) ?: return ProductCategoryDeletionResult.NotFound
         if (category.parentId == null) {

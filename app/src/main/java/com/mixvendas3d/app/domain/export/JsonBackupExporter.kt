@@ -386,7 +386,8 @@ object JsonBackupExporter {
             productCategories = snapshot.productCategories.sortedWith(
                 compareBy<com.mixvendas3d.app.data.local.entity.ProductCategoryEntity> { it.parentId != null }
                     .thenBy { it.parentId }
-                    .thenBy { it.normalizedName },
+                    .thenBy { it.normalizedName }
+                    .thenBy { it.id },
             ),
             machines = snapshot.machines.sortedWith(compareBy<MachineEntity> { it.createdAtEpochMs }.thenBy { it.id }),
             machineBrandRates = snapshot.machineBrandRates.sortedWith(
@@ -411,10 +412,12 @@ object JsonBackupExporter {
     internal fun validateSnapshot(snapshot: JsonBackupSnapshot) {
         validatePreferences(snapshot.preferences)
         val personIds = validatePeople(snapshot.people)
+        val categoriesById = validateProductCategories(snapshot.productCategories)
         validateProductsAndParticipants(
             products = snapshot.products,
             productParticipants = snapshot.productParticipants,
             personIds = personIds,
+            categoriesById = categoriesById,
         )
         validateMachinesAndRates(
             machines = snapshot.machines,
@@ -467,10 +470,59 @@ object JsonBackupExporter {
         return seenIds
     }
 
+    private fun validateProductCategories(
+        categories: List<com.mixvendas3d.app.data.local.entity.ProductCategoryEntity>,
+    ): Map<String, com.mixvendas3d.app.data.local.entity.ProductCategoryEntity> {
+        val byId = LinkedHashMap<String, com.mixvendas3d.app.data.local.entity.ProductCategoryEntity>(categories.size)
+        val seenNormalizedByParent = HashSet<Pair<String?, String>>(categories.size)
+        categories.forEach { cat ->
+            if (cat.id.isBlank()) {
+                throw JsonBackupValidationException(cat.id, "ID de categoria em branco.")
+            }
+            if (byId.put(cat.id, cat) != null) {
+                throw JsonBackupValidationException(cat.id, "ID de categoria duplicado: ${cat.id}")
+            }
+            if (cat.name.isBlank() || cat.normalizedName.isBlank()) {
+                throw JsonBackupValidationException(cat.id, "Nome inválido na categoria ${cat.id}.")
+            }
+            if (cat.parentId != null && cat.parentId.isBlank()) {
+                throw JsonBackupValidationException(cat.id, "Categoria pai em branco na subcategoria ${cat.id}.")
+            }
+            if (!seenNormalizedByParent.add(cat.parentId to cat.normalizedName)) {
+                throw JsonBackupValidationException(
+                    cat.id,
+                    "Nome normalizado de categoria duplicado no mesmo nível: ${cat.normalizedName}",
+                )
+            }
+            if (cat.createdAtEpochMs < 0L || cat.updatedAtEpochMs < 0L) {
+                throw JsonBackupValidationException(cat.id, "Metadados de data inválidos na categoria ${cat.id}.")
+            }
+        }
+        categories.forEach { cat ->
+            val parentId = cat.parentId ?: return@forEach
+            if (parentId == cat.id) {
+                throw JsonBackupValidationException(cat.id, "Categoria ${cat.id} não pode referenciar a si mesma como pai.")
+            }
+            val parent = byId[parentId]
+                ?: throw JsonBackupValidationException(
+                    cat.id,
+                    "Subcategoria ${cat.id} referencia categoria pai inexistente $parentId.",
+                )
+            if (parent.parentId != null) {
+                throw JsonBackupValidationException(
+                    cat.id,
+                    "Subcategoria ${cat.id} referencia categoria pai inválida $parentId (já é subcategoria).",
+                )
+            }
+        }
+        return byId
+    }
+
     private fun validateProductsAndParticipants(
         products: List<ProductEntity>,
         productParticipants: List<ProductParticipantEntity>,
         personIds: Set<String>,
+        categoriesById: Map<String, com.mixvendas3d.app.data.local.entity.ProductCategoryEntity>,
     ) {
         val seenProductIds = HashSet<String>(products.size)
         products.forEach { product ->
@@ -494,6 +546,46 @@ object JsonBackupExporter {
                     product.id,
                     "Modo de responsabilidade de tarifa inválido no produto ${product.id}: ${product.feeResponsibilityMode}",
                 )
+            }
+            val categoryId = product.categoryId
+            val subcategoryId = product.subcategoryId
+            if (categoryId != null) {
+                if (categoryId.isBlank()) {
+                    throw JsonBackupValidationException(product.id, "Categoria em branco no produto ${product.id}.")
+                }
+                val category = categoriesById[categoryId]
+                    ?: throw JsonBackupValidationException(
+                        product.id,
+                        "Produto ${product.id} referencia categoria inexistente $categoryId.",
+                    )
+                if (category.parentId != null) {
+                    throw JsonBackupValidationException(
+                        product.id,
+                        "Produto ${product.id} referencia categoria principal inválida $categoryId (é subcategoria).",
+                    )
+                }
+            }
+            if (subcategoryId != null) {
+                if (subcategoryId.isBlank()) {
+                    throw JsonBackupValidationException(product.id, "Subcategoria em branco no produto ${product.id}.")
+                }
+                if (categoryId == null) {
+                    throw JsonBackupValidationException(
+                        product.id,
+                        "Produto ${product.id} referencia subcategoria $subcategoryId sem categoria principal.",
+                    )
+                }
+                val subcategory = categoriesById[subcategoryId]
+                    ?: throw JsonBackupValidationException(
+                        product.id,
+                        "Produto ${product.id} referencia subcategoria inexistente $subcategoryId.",
+                    )
+                if (subcategory.parentId != categoryId) {
+                    throw JsonBackupValidationException(
+                        product.id,
+                        "Produto ${product.id} referencia subcategoria $subcategoryId incompatível com a categoria $categoryId.",
+                    )
+                }
             }
         }
 

@@ -26,6 +26,7 @@ enum class BackupPreviewGroupType(
     val title: String,
 ) {
     PEOPLE("PEOPLE", "Pessoas"),
+    PRODUCT_CATEGORIES("PRODUCT_CATEGORIES", "Categorias"),
     PRODUCT("PRODUCT", "Produtos"),
     MACHINE("MACHINE", "Maquininhas"),
     SALE("SALE", "Vendas"),
@@ -107,6 +108,7 @@ internal object BackupPreviewFormatter {
     ): BackupPreviewUi {
         val merged = preview.mergedCollections
         val peopleById = (merged.people + validatedBackup.people).associateBy { it.id }
+        val categoriesById = (merged.productCategories + validatedBackup.productCategories).associateBy { it.id }
         val productsById = (merged.products + validatedBackup.products).associateBy { it.id }
         val productPartsByProd = merged.productParticipants.groupBy { it.productId }
         val machinesById = (merged.machines + validatedBackup.machines).associateBy { it.id }
@@ -125,6 +127,7 @@ internal object BackupPreviewFormatter {
             val uiItem = formatChangedEntry(
                 entry = entry,
                 peopleById = peopleById,
+                categoriesById = categoriesById,
                 productsById = productsById,
                 productPartsByProd = productPartsByProd,
                 machinesById = machinesById,
@@ -185,6 +188,7 @@ internal object BackupPreviewFormatter {
     private fun groupTypeFor(entry: PreviewChangedEntry): BackupPreviewGroupType {
         return when {
             entry.collection == BackupCollectionType.PEOPLE -> BackupPreviewGroupType.PEOPLE
+            entry.collection == BackupCollectionType.PRODUCT_CATEGORIES -> BackupPreviewGroupType.PRODUCT_CATEGORIES
             entry.unitType == MergeUnitType.PRODUCT -> BackupPreviewGroupType.PRODUCT
             entry.unitType == MergeUnitType.MACHINE -> BackupPreviewGroupType.MACHINE
             entry.unitType == MergeUnitType.SALE -> BackupPreviewGroupType.SALE
@@ -196,6 +200,7 @@ internal object BackupPreviewFormatter {
     private fun formatChangedEntry(
         entry: PreviewChangedEntry,
         peopleById: Map<String, com.mixvendas3d.app.domain.export.PersonDto>,
+        categoriesById: Map<String, com.mixvendas3d.app.domain.export.ProductCategoryDto>,
         productsById: Map<String, com.mixvendas3d.app.domain.export.ProductDto>,
         productPartsByProd: Map<String, List<com.mixvendas3d.app.domain.export.ProductParticipantDto>>,
         machinesById: Map<String, com.mixvendas3d.app.domain.export.MachineDto>,
@@ -229,6 +234,31 @@ internal object BackupPreviewFormatter {
                 )
             }
 
+            entry.collection == BackupCollectionType.PRODUCT_CATEGORIES -> {
+                val category = categoriesById[entry.targetId]
+                val isSub = category?.parentId != null
+                val parentName = category?.parentId?.let { categoriesById[it]?.name ?: it }
+                val kindLabel = if (isSub) "Subcategoria" else "Categoria"
+                BackupPreviewChangeItemUi(
+                    entryKey = entryKey,
+                    operation = entry.operation,
+                    isAtomicUnit = false,
+                    title = category?.name ?: entry.targetId,
+                    subtitle = "$opVerb · $kindLabel",
+                    atomicReplacementNote = if (entry.operation == PreviewChangeOperation.REPLACE) {
+                        "O cadastro desta ${kindLabel.lowercase()} no celular será atualizado pelos dados do backup."
+                    } else {
+                        null
+                    },
+                    detailLines = buildList {
+                        category?.let { add("Nome: ${it.name}") }
+                        if (parentName != null) {
+                            add("Categoria principal: $parentName")
+                        }
+                    },
+                )
+            }
+
             entry.unitType == MergeUnitType.PRODUCT -> {
                 val product = productsById[entry.targetId]
                 val partsCount = entry.memberCountsByCollection[BackupCollectionType.PRODUCT_PARTICIPANTS]
@@ -239,6 +269,11 @@ internal object BackupPreviewFormatter {
                         val pName = peopleById[part.personId]?.name ?: part.personId
                         "$pName ${formatMoney(part.amountCents)}"
                     }
+                val categoryPath = product?.let { prod ->
+                    val catName = prod.categoryId?.let { categoriesById[it]?.name ?: it }
+                    val subName = prod.subcategoryId?.let { categoriesById[it]?.name ?: it }
+                    listOfNotNull(catName, subName).joinToString(" / ").takeIf { it.isNotBlank() }
+                }
                 BackupPreviewChangeItemUi(
                     entryKey = entryKey,
                     operation = entry.operation,
@@ -253,6 +288,9 @@ internal object BackupPreviewFormatter {
                     detailLines = buildList {
                         product?.let {
                             add("Preço: ${formatMoney(it.priceCents)} · ${if (it.active) "Ativo" else "Inativo"}")
+                        }
+                        if (categoryPath != null) {
+                            add("Categoria: $categoryPath")
                         }
                         if (splitsText.isNotBlank()) {
                             add("Divisão: $splitsText")

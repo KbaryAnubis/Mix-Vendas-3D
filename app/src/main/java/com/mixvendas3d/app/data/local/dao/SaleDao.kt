@@ -88,6 +88,9 @@ interface SaleDao {
     @Query("SELECT COUNT(*) FROM sale_item_participants")
     suspend fun countSaleItemParticipants(): Int
 
+    @Query("SELECT COUNT(*) FROM sales WHERE machine_id = :machineId")
+    suspend fun countSalesUsingMachine(machineId: String): Int
+
     @Query("SELECT COUNT(*) FROM sale_person_totals")
     suspend fun countSalePersonTotals(): Int
 }

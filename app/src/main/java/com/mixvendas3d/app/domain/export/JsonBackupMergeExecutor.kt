@@ -8,6 +8,7 @@ import com.mixvendas3d.app.data.local.entity.MachineEntity
 import com.mixvendas3d.app.data.local.entity.MachineInstallmentRateEntity
 import com.mixvendas3d.app.data.local.entity.PersonEntity
 import com.mixvendas3d.app.data.local.entity.PreferenceEntity
+import com.mixvendas3d.app.data.local.entity.ProductCategoryEntity
 import com.mixvendas3d.app.data.local.entity.ProductEntity
 import com.mixvendas3d.app.data.local.entity.ProductParticipantEntity
 import com.mixvendas3d.app.data.local.entity.SaleEntity
@@ -467,6 +468,7 @@ object JsonBackupMergeExecutor {
             saleItems = saleDao.getAllSaleItems().toList(),
             saleItemParticipants = saleDao.getAllSaleItemParticipants().toList(),
             salePersonTotals = saleDao.getAllSalePersonTotals().toList(),
+            productCategories = productDao.getAllCategories().toList(),
         )
     }
 
@@ -484,6 +486,7 @@ object JsonBackupMergeExecutor {
 
         val backupPrefsByKey = validatedBackup.preferences.associateBy { it.key }
         val backupPeopleById = validatedBackup.people.associateBy { it.id }
+        val backupCategoriesById = validatedBackup.productCategories.associateBy { it.id }
 
         val backupProdsById = validatedBackup.products.associateBy { it.id }
         val backupPartsByProd = validatedBackup.productParticipants.groupBy { it.productId }
@@ -573,22 +576,42 @@ object JsonBackupMergeExecutor {
                 }
             }
 
-        // 2.5) PRODUCT_CATEGORIES
-        if (validatedBackup.productCategories.isNotEmpty()) {
-            validatedBackup.productCategories.forEach { catDto ->
-                val catEntity = com.mixvendas3d.app.data.local.entity.ProductCategoryEntity(
-                    id = catDto.id,
-                    name = catDto.name,
-                    normalizedName = catDto.normalizedName,
-                    parentId = catDto.parentId,
-                    createdAtEpochMs = catDto.createdAtEpochMs,
-                    updatedAtEpochMs = catDto.updatedAtEpochMs,
-                )
-                if (productDao.getCategoryById(catDto.id) == null) {
-                    productDao.insertCategoryIfUnique(catEntity)
-                } else {
-                    productDao.renameCategoryIfUnique(catEntity)
+        // 2.5) PRODUCT_CATEGORIES (categorias principais antes de subcategorias; respeita decisões e unicidade)
+        val orderedCategoryRecords = decisionValidation.eligibleStandaloneRecords
+            .filter { it.collection == BackupCollectionType.PRODUCT_CATEGORIES }
+            .sortedWith(
+                compareBy<EligibleStandaloneRecord>(
+                    { backupCategoriesById[it.recordId]?.parentId != null },
+                    { backupCategoriesById[it.recordId]?.parentId.orEmpty() },
+                    { it.recordId },
+                ),
+            )
+        orderedCategoryRecords.forEach { rec ->
+            when (rec.disposition) {
+                EligibleOperationDisposition.ADD_NEW -> {
+                    val dto = backupCategoriesById.getValue(rec.recordId)
+                    val inserted = productDao.insertCategoryIfUnique(dto.toEntity())
+                    if (!inserted) {
+                        throw MergeTransactionAbortException(
+                            reason = MergeExecutionFailureReason.DATABASE_CONSTRAINT_VIOLATION,
+                            message = "Falha ao inserir categoria '${rec.recordId}': colisão de normalizedName ou restrição de integridade.",
+                        )
+                    }
+                    onInsertCompleted()
                 }
+                EligibleOperationDisposition.APPLY_BACKUP -> {
+                    val dto = backupCategoriesById.getValue(rec.recordId)
+                    val updated = productDao.updateCategoryIfUnique(dto.toEntity())
+                    if (!updated) {
+                        throw MergeTransactionAbortException(
+                            reason = MergeExecutionFailureReason.DATABASE_CONSTRAINT_VIOLATION,
+                            message = "Falha ao atualizar categoria '${rec.recordId}': registro local ausente ou colisão de normalizedName.",
+                        )
+                    }
+                    onUpdateCompleted()
+                }
+                EligibleOperationDisposition.KEEP_EXISTING,
+                EligibleOperationDisposition.SKIP_BACKUP -> Unit
             }
         }
 
@@ -800,6 +823,15 @@ object JsonBackupMergeExecutor {
         updatedAtEpochMs = updatedAtEpochMs,
     )
 
+    private fun ProductCategoryDto.toEntity() = ProductCategoryEntity(
+        id = id,
+        name = name,
+        normalizedName = normalizedName,
+        parentId = parentId,
+        createdAtEpochMs = createdAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+    )
+
     private fun ProductDto.toEntity() = ProductEntity(
         id = id,
         name = name,
@@ -807,6 +839,8 @@ object JsonBackupMergeExecutor {
         active = active,
         feeResponsibilityMode = feeResponsibilityMode,
         feeOwnerPersonId = feeOwnerPersonId,
+        categoryId = categoryId,
+        subcategoryId = subcategoryId,
         createdAtEpochMs = createdAtEpochMs,
         updatedAtEpochMs = updatedAtEpochMs,
     )

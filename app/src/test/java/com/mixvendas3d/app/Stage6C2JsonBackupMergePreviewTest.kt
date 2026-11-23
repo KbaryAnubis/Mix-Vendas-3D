@@ -794,7 +794,7 @@ class Stage6C2JsonBackupMergePreviewTest {
             val preview = JsonBackupMergePreviewBuilder.buildPreview(readResult, plan, decisions, validation, localDb)
 
             assertTrue(preview.isSafeToApply)
-            assertEquals(11, preview.finalTableCounts.size)
+            assertEquals(12, preview.finalTableCounts.size)
             assertEquals(2, preview.finalTableCounts[BackupCollectionType.PREFERENCES])
             assertEquals(3, preview.finalTableCounts[BackupCollectionType.PEOPLE])
             assertEquals(1, preview.finalTableCounts[BackupCollectionType.PRODUCTS])

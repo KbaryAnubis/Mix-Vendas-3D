@@ -86,6 +86,7 @@ object JsonBackupMergeDecisionValidator {
         val observedCounts = mapOf(
             BackupCollectionType.PREFERENCES to localSnapshot.preferences.size,
             BackupCollectionType.PEOPLE to localSnapshot.people.size,
+            BackupCollectionType.PRODUCT_CATEGORIES to localSnapshot.productCategories.size,
             BackupCollectionType.PRODUCTS to localSnapshot.products.size,
             BackupCollectionType.PRODUCT_PARTICIPANTS to localSnapshot.productParticipants.size,
             BackupCollectionType.MACHINES to localSnapshot.machines.size,
@@ -175,12 +176,24 @@ object JsonBackupMergeDecisionValidator {
             eligibleStandalone = eligibleStandalone,
         )
 
-        // 6) Produtos + Participantes (unidade atômica + dependência de pessoas)
+        // 5.5) Categorias e subcategorias de produtos (principais antes de subcategorias + colisão de nome)
+        val categoryAvailability = validateProductCategories(
+            resolvedPlan = resolvedPlan,
+            validatedBackup = validatedBackup,
+            localSnapshot = localSnapshot,
+            resolvedConflictsByKey = resolvedConflictsByKey,
+            pendingDependencies = pendingDependencies,
+            blockedOperations = blockedOperations,
+            eligibleStandalone = eligibleStandalone,
+        )
+
+        // 6) Produtos + Participantes (unidade atômica + dependência de pessoas e categorias)
         validateProductUnits(
             resolvedPlan = resolvedPlan,
             validatedBackup = validatedBackup,
             resolvedConflictsByKey = resolvedConflictsByKey,
             personAvailability = personAvailability,
+            categoryAvailability = categoryAvailability,
             pendingDependencies = pendingDependencies,
             incompatibleDecisions = incompatibleDecisions,
             blockedOperations = blockedOperations,
@@ -490,11 +503,342 @@ object JsonBackupMergeDecisionValidator {
         return availability
     }
 
+    private data class CategoryAvailabilityInfo(
+        val status: PersonAvailabilityStatus,
+        val effectiveParentId: String?,
+    )
+
+    private fun validateProductCategories(
+        resolvedPlan: JsonBackupMergePlanResult,
+        validatedBackup: ValidatedBackupData,
+        localSnapshot: JsonBackupSnapshot,
+        resolvedConflictsByKey: Map<String, MergeConflictItem>,
+        pendingDependencies: MutableList<PendingDependencyDetail>,
+        blockedOperations: MutableList<DecisionValidationIssue>,
+        eligibleStandalone: MutableList<EligibleStandaloneRecord>,
+    ): Map<String, CategoryAvailabilityInfo> {
+        val backupCatsById = validatedBackup.productCategories.associateBy { it.id }
+        val localCatsById = localSnapshot.productCategories.associateBy { it.id }
+        val localByScopeAndNorm = localSnapshot.productCategories.associateBy {
+            (it.parentId ?: "") to it.normalizedName
+        }
+        val availability = HashMap<String, CategoryAvailabilityInfo>()
+
+        // Identifica subcategorias locais que permanecerão apontando para um pai local
+        val localChildrenByParent = localSnapshot.productCategories
+            .filter { it.parentId != null }
+            .groupBy { it.parentId!! }
+
+        // Processa categorias principais (parentId == null) antes das subcategorias (parentId != null)
+        val orderedRecords = resolvedPlan.planFor(BackupCollectionType.PRODUCT_CATEGORIES).records.sortedWith(
+            compareBy<PlannedRecordAction>(
+                { backupCatsById[it.recordId]?.parentId != null },
+                { backupCatsById[it.recordId]?.parentId.orEmpty() },
+                { it.recordId },
+            ),
+        )
+
+        orderedRecords.forEach { rec ->
+            when (rec.action) {
+                MergePlanAction.KEEP -> {
+                    val localCat = localCatsById[rec.recordId]
+                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                        status = PersonAvailabilityStatus.AVAILABLE,
+                        effectiveParentId = localCat?.parentId,
+                    )
+                    eligibleStandalone.add(
+                        EligibleStandaloneRecord(
+                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                            recordId = rec.recordId,
+                            disposition = EligibleOperationDisposition.KEEP_EXISTING,
+                            keyParts = rec.keyParts,
+                        ),
+                    )
+                }
+                MergePlanAction.ADD,
+                MergePlanAction.PENDING_DEPENDENCY -> {
+                    val bCat = backupCatsById[rec.recordId]
+                    val colliding = bCat?.let { localByScopeAndNorm[(it.parentId ?: "") to it.normalizedName] }
+                        ?.takeIf { it.id != rec.recordId }
+                    when {
+                        bCat == null || bCat.name.isBlank() || bCat.normalizedName.isBlank() || bCat.parentId == bCat.id -> {
+                            blockedOperations.add(
+                                DecisionValidationIssue(
+                                    type = DecisionValidationIssueType.FINANCIAL_OR_RATE_VALIDATION_ERROR,
+                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                    recordId = rec.recordId,
+                                    message = "Categoria '${rec.recordId}' possui dados inválidos no backup.",
+                                ),
+                            )
+                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                effectiveParentId = bCat?.parentId,
+                            )
+                        }
+                        colliding != null -> {
+                            blockedOperations.add(
+                                DecisionValidationIssue(
+                                    type = DecisionValidationIssueType.IDENTITY_NAME_COLLISION_BLOCKED,
+                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                    recordId = rec.recordId,
+                                    message = "Categoria '${rec.recordId}' colide em normalizedName com categoria local '${colliding.id}'.",
+                                ),
+                            )
+                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                effectiveParentId = bCat.parentId,
+                            )
+                        }
+                        bCat.parentId != null -> {
+                            val parentInfo = availability[bCat.parentId]
+                            when {
+                                parentInfo != null &&
+                                    parentInfo.status == PersonAvailabilityStatus.AVAILABLE &&
+                                    parentInfo.effectiveParentId == null -> {
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.AVAILABLE,
+                                        effectiveParentId = bCat.parentId,
+                                    )
+                                    eligibleStandalone.add(
+                                        EligibleStandaloneRecord(
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            disposition = EligibleOperationDisposition.ADD_NEW,
+                                            keyParts = rec.keyParts,
+                                        ),
+                                    )
+                                }
+                                parentInfo?.status == PersonAvailabilityStatus.UNRESOLVED_CONFLICT -> {
+                                    pendingDependencies.add(
+                                        PendingDependencyDetail(
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            dependsOnRecordId = bCat.parentId,
+                                            reason = "Subcategoria '${rec.recordId}' aguarda resolução explícita da categoria principal '${bCat.parentId}'.",
+                                        ),
+                                    )
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.UNRESOLVED_CONFLICT,
+                                        effectiveParentId = bCat.parentId,
+                                    )
+                                }
+                                else -> {
+                                    blockedOperations.add(
+                                        DecisionValidationIssue(
+                                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            message = "Subcategoria '${rec.recordId}' referencia categoria principal '${bCat.parentId}' indisponível sem remapeamento.",
+                                        ),
+                                    )
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                        effectiveParentId = bCat.parentId,
+                                    )
+                                }
+                            }
+                        }
+                        else -> {
+                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                status = PersonAvailabilityStatus.AVAILABLE,
+                                effectiveParentId = null,
+                            )
+                            eligibleStandalone.add(
+                                EligibleStandaloneRecord(
+                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                    recordId = rec.recordId,
+                                    disposition = EligibleOperationDisposition.ADD_NEW,
+                                    keyParts = rec.keyParts,
+                                ),
+                            )
+                        }
+                    }
+                }
+                MergePlanAction.CONFLICT -> {
+                    val conflict = resolvedConflictsByKey["${BackupCollectionType.PRODUCT_CATEGORIES.key}:${rec.recordId}"]
+                    val resolution = conflict?.selectedResolution
+                    when (resolution) {
+                        null -> {
+                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                status = PersonAvailabilityStatus.UNRESOLVED_CONFLICT,
+                                effectiveParentId = localCatsById[rec.recordId]?.parentId ?: backupCatsById[rec.recordId]?.parentId,
+                            )
+                        }
+                        MergeConflictResolution.USE_BACKUP -> {
+                            val bCat = backupCatsById[rec.recordId]
+                            val colliding = bCat?.let { localByScopeAndNorm[(it.parentId ?: "") to it.normalizedName] }
+                                ?.takeIf { it.id != rec.recordId }
+                            val hasSurvivingLocalChildren = bCat?.parentId != null &&
+                                localChildrenByParent[rec.recordId].orEmpty().any { child ->
+                                    val childBackup = backupCatsById[child.id]
+                                    val childConflict = resolvedConflictsByKey["${BackupCollectionType.PRODUCT_CATEGORIES.key}:${child.id}"]
+                                    childBackup == null ||
+                                        childConflict?.selectedResolution != MergeConflictResolution.USE_BACKUP ||
+                                        childBackup.parentId == rec.recordId
+                                }
+                            when {
+                                conflict.kind == MergeConflictKind.IDENTITY_NAME_COLLISION ||
+                                    conflict.collidingLocalRecordId != null ||
+                                    colliding != null -> {
+                                    val targetCollision = conflict.collidingLocalRecordId ?: colliding?.id
+                                    blockedOperations.add(
+                                        DecisionValidationIssue(
+                                            type = DecisionValidationIssueType.IDENTITY_NAME_COLLISION_BLOCKED,
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            message = "Decisão USE_BACKUP para categoria '${rec.recordId}' bloqueada: colisão de normalizedName com '$targetCollision' exigiria remapeamento de ID não permitido.",
+                                        ),
+                                    )
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                        effectiveParentId = bCat?.parentId,
+                                    )
+                                }
+                                bCat == null || bCat.name.isBlank() || bCat.normalizedName.isBlank() || bCat.parentId == bCat.id -> {
+                                    blockedOperations.add(
+                                        DecisionValidationIssue(
+                                            type = DecisionValidationIssueType.FINANCIAL_OR_RATE_VALIDATION_ERROR,
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            message = "Categoria '${rec.recordId}' do backup possui dados inválidos.",
+                                        ),
+                                    )
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                        effectiveParentId = bCat?.parentId,
+                                    )
+                                }
+                                hasSurvivingLocalChildren -> {
+                                    blockedOperations.add(
+                                        DecisionValidationIssue(
+                                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            message = "Categoria '${rec.recordId}' não pode se tornar subcategoria pois possui subcategorias locais vinculadas.",
+                                        ),
+                                    )
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                        effectiveParentId = bCat.parentId,
+                                    )
+                                }
+                                bCat.parentId != null -> {
+                                    val parentInfo = availability[bCat.parentId]
+                                    when {
+                                        parentInfo != null &&
+                                            parentInfo.status == PersonAvailabilityStatus.AVAILABLE &&
+                                            parentInfo.effectiveParentId == null -> {
+                                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                                status = PersonAvailabilityStatus.AVAILABLE,
+                                                effectiveParentId = bCat.parentId,
+                                            )
+                                            eligibleStandalone.add(
+                                                EligibleStandaloneRecord(
+                                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                                    recordId = rec.recordId,
+                                                    disposition = EligibleOperationDisposition.APPLY_BACKUP,
+                                                    keyParts = rec.keyParts,
+                                                ),
+                                            )
+                                        }
+                                        parentInfo?.status == PersonAvailabilityStatus.UNRESOLVED_CONFLICT -> {
+                                            pendingDependencies.add(
+                                                PendingDependencyDetail(
+                                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                                    recordId = rec.recordId,
+                                                    dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                                    dependsOnRecordId = bCat.parentId,
+                                                    reason = "Subcategoria '${rec.recordId}' aguarda resolução explícita da categoria principal '${bCat.parentId}'.",
+                                                ),
+                                            )
+                                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                                status = PersonAvailabilityStatus.UNRESOLVED_CONFLICT,
+                                                effectiveParentId = bCat.parentId,
+                                            )
+                                        }
+                                        else -> {
+                                            blockedOperations.add(
+                                                DecisionValidationIssue(
+                                                    type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                                    recordId = rec.recordId,
+                                                    message = "Subcategoria '${rec.recordId}' referencia categoria principal '${bCat.parentId}' indisponível sem remapeamento.",
+                                                ),
+                                            )
+                                            availability[rec.recordId] = CategoryAvailabilityInfo(
+                                                status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                                                effectiveParentId = bCat.parentId,
+                                            )
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                                        status = PersonAvailabilityStatus.AVAILABLE,
+                                        effectiveParentId = null,
+                                    )
+                                    eligibleStandalone.add(
+                                        EligibleStandaloneRecord(
+                                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                            recordId = rec.recordId,
+                                            disposition = EligibleOperationDisposition.APPLY_BACKUP,
+                                            keyParts = rec.keyParts,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        MergeConflictResolution.KEEP_LOCAL,
+                        MergeConflictResolution.IGNORE_IMPORT -> {
+                            if (conflict.kind == MergeConflictKind.IDENTITY_NAME_COLLISION) {
+                                availability[rec.recordId] = CategoryAvailabilityInfo(
+                                    status = PersonAvailabilityStatus.SKIPPED_DISTINCT_ID,
+                                    effectiveParentId = backupCatsById[rec.recordId]?.parentId,
+                                )
+                            } else {
+                                availability[rec.recordId] = CategoryAvailabilityInfo(
+                                    status = PersonAvailabilityStatus.AVAILABLE,
+                                    effectiveParentId = localCatsById[rec.recordId]?.parentId,
+                                )
+                            }
+                            eligibleStandalone.add(
+                                EligibleStandaloneRecord(
+                                    collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                                    recordId = rec.recordId,
+                                    disposition = EligibleOperationDisposition.SKIP_BACKUP,
+                                    keyParts = rec.keyParts,
+                                ),
+                            )
+                        }
+                    }
+                }
+                MergePlanAction.BLOCKED -> {
+                    availability[rec.recordId] = CategoryAvailabilityInfo(
+                        status = PersonAvailabilityStatus.BLOCKED_COLLISION,
+                        effectiveParentId = backupCatsById[rec.recordId]?.parentId,
+                    )
+                    blockedOperations.add(
+                        DecisionValidationIssue(
+                            type = DecisionValidationIssueType.FINANCIAL_OR_RATE_VALIDATION_ERROR,
+                            collection = BackupCollectionType.PRODUCT_CATEGORIES,
+                            recordId = rec.recordId,
+                            message = rec.reason ?: "Categoria '${rec.recordId}' bloqueada no plano.",
+                        ),
+                    )
+                }
+            }
+        }
+
+        return availability
+    }
+
     private fun validateProductUnits(
         resolvedPlan: JsonBackupMergePlanResult,
         validatedBackup: ValidatedBackupData,
         resolvedConflictsByKey: Map<String, MergeConflictItem>,
         personAvailability: Map<String, PersonAvailabilityStatus>,
+        categoryAvailability: Map<String, CategoryAvailabilityInfo>,
         pendingDependencies: MutableList<PendingDependencyDetail>,
         incompatibleDecisions: MutableList<DecisionValidationIssue>,
         blockedOperations: MutableList<DecisionValidationIssue>,
@@ -559,14 +903,20 @@ object JsonBackupMergeDecisionValidator {
                                 ),
                             )
                         } else {
-                            val refOk = checkProductPersonDependencies(
+                            val peopleOk = checkProductPersonDependencies(
                                 product = bProd!!,
                                 participants = bParts,
                                 personAvailability = personAvailability,
                                 pendingDependencies = pendingDependencies,
                                 blockedOperations = blockedOperations,
                             )
-                            if (refOk) {
+                            val categoriesOk = checkProductCategoryDependencies(
+                                product = bProd,
+                                categoryAvailability = categoryAvailability,
+                                pendingDependencies = pendingDependencies,
+                                blockedOperations = blockedOperations,
+                            )
+                            if (peopleOk && categoriesOk) {
                                 eligibleUnits.add(
                                     EligibleMergeUnit(
                                         unitType = MergeUnitType.PRODUCT,
@@ -621,14 +971,20 @@ object JsonBackupMergeDecisionValidator {
                                         ),
                                     )
                                 } else {
-                                    val refOk = checkProductPersonDependencies(
+                                    val peopleOk = checkProductPersonDependencies(
                                         product = bProd!!,
                                         participants = bParts,
                                         personAvailability = personAvailability,
                                         pendingDependencies = pendingDependencies,
                                         blockedOperations = blockedOperations,
                                     )
-                                    if (refOk) {
+                                    val categoriesOk = checkProductCategoryDependencies(
+                                        product = bProd,
+                                        categoryAvailability = categoryAvailability,
+                                        pendingDependencies = pendingDependencies,
+                                        blockedOperations = blockedOperations,
+                                    )
+                                    if (peopleOk && categoriesOk) {
                                         eligibleUnits.add(
                                             EligibleMergeUnit(
                                                 unitType = MergeUnitType.PRODUCT,
@@ -712,6 +1068,127 @@ object JsonBackupMergeDecisionValidator {
                 }
             }
         }
+        return allResolvedAndAvailable
+    }
+
+    private fun checkProductCategoryDependencies(
+        product: ProductDto,
+        categoryAvailability: Map<String, CategoryAvailabilityInfo>,
+        pendingDependencies: MutableList<PendingDependencyDetail>,
+        blockedOperations: MutableList<DecisionValidationIssue>,
+    ): Boolean {
+        val catId = product.categoryId
+        val subId = product.subcategoryId
+        if (catId == null && subId == null) return true
+        var allResolvedAndAvailable = true
+
+        if (subId != null && catId == null) {
+            allResolvedAndAvailable = false
+            blockedOperations.add(
+                DecisionValidationIssue(
+                    type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                    collection = BackupCollectionType.PRODUCTS,
+                    recordId = product.id,
+                    relatedUnitType = MergeUnitType.PRODUCT,
+                    relatedUnitId = product.id,
+                    message = "Produto '${product.id}' define subcategoria '$subId' sem categoria principal.",
+                ),
+            )
+            return false
+        }
+
+        if (catId != null) {
+            val catInfo = categoryAvailability[catId]
+            when {
+                catInfo == null ||
+                    catInfo.status == PersonAvailabilityStatus.BLOCKED_COLLISION ||
+                    catInfo.status == PersonAvailabilityStatus.SKIPPED_DISTINCT_ID -> {
+                    allResolvedAndAvailable = false
+                    blockedOperations.add(
+                        DecisionValidationIssue(
+                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            relatedUnitType = MergeUnitType.PRODUCT,
+                            relatedUnitId = product.id,
+                            message = "Produto '${product.id}' referencia categoria '$catId' que não estará disponível sem remapeamento.",
+                        ),
+                    )
+                }
+                catInfo.status == PersonAvailabilityStatus.UNRESOLVED_CONFLICT -> {
+                    allResolvedAndAvailable = false
+                    pendingDependencies.add(
+                        PendingDependencyDetail(
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                            dependsOnRecordId = catId,
+                            reason = "Produto '${product.id}' aguarda resolução explícita da categoria '$catId'.",
+                        ),
+                    )
+                }
+                catInfo.effectiveParentId != null -> {
+                    allResolvedAndAvailable = false
+                    blockedOperations.add(
+                        DecisionValidationIssue(
+                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            relatedUnitType = MergeUnitType.PRODUCT,
+                            relatedUnitId = product.id,
+                            message = "Produto '${product.id}' referencia '$catId' em categoryId, mas ela não é uma categoria principal.",
+                        ),
+                    )
+                }
+            }
+        }
+
+        if (subId != null) {
+            val subInfo = categoryAvailability[subId]
+            when {
+                subInfo == null ||
+                    subInfo.status == PersonAvailabilityStatus.BLOCKED_COLLISION ||
+                    subInfo.status == PersonAvailabilityStatus.SKIPPED_DISTINCT_ID -> {
+                    allResolvedAndAvailable = false
+                    blockedOperations.add(
+                        DecisionValidationIssue(
+                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            relatedUnitType = MergeUnitType.PRODUCT,
+                            relatedUnitId = product.id,
+                            message = "Produto '${product.id}' referencia subcategoria '$subId' que não estará disponível sem remapeamento.",
+                        ),
+                    )
+                }
+                subInfo.status == PersonAvailabilityStatus.UNRESOLVED_CONFLICT -> {
+                    allResolvedAndAvailable = false
+                    pendingDependencies.add(
+                        PendingDependencyDetail(
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            dependsOnCollection = BackupCollectionType.PRODUCT_CATEGORIES,
+                            dependsOnRecordId = subId,
+                            reason = "Produto '${product.id}' aguarda resolução explícita da subcategoria '$subId'.",
+                        ),
+                    )
+                }
+                subInfo.effectiveParentId != catId -> {
+                    allResolvedAndAvailable = false
+                    blockedOperations.add(
+                        DecisionValidationIssue(
+                            type = DecisionValidationIssueType.UNRESOLVED_DEPENDENCY,
+                            collection = BackupCollectionType.PRODUCTS,
+                            recordId = product.id,
+                            relatedUnitType = MergeUnitType.PRODUCT,
+                            relatedUnitId = product.id,
+                            message = "Subcategoria '$subId' do produto '${product.id}' não pertence à categoria principal '$catId'.",
+                        ),
+                    )
+                }
+            }
+        }
+
         return allResolvedAndAvailable
     }
 

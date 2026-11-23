@@ -5,6 +5,7 @@ import java.util.Collections
 enum class BackupCollectionType(val key: String) {
     PREFERENCES("preferences"),
     PEOPLE("people"),
+    PRODUCT_CATEGORIES("productCategories"),
     PRODUCTS("products"),
     PRODUCT_PARTICIPANTS("productParticipants"),
     MACHINES("machines"),
