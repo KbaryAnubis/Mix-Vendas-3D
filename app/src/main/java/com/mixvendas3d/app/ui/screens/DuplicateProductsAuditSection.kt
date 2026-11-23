@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WarningAmber
@@ -56,11 +55,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.mixvendas3d.app.R
 import com.mixvendas3d.app.domain.calculation.AuditedProductEntry
 import com.mixvendas3d.app.domain.calculation.ExactDuplicateGroup
 import com.mixvendas3d.app.domain.calculation.ProductDuplicateAuditReport
 import com.mixvendas3d.app.domain.calculation.SimilarProductGroup
 import com.mixvendas3d.app.domain.models.MoneyCents
+import com.mixvendas3d.app.ui.components.Mv3dIcon
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
 import com.mixvendas3d.app.ui.theme.HomeCardGlassBottom
@@ -99,21 +100,12 @@ internal fun DuplicateProductsAuditSectionCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = V19SurfaceChip,
-                    border = BorderStroke(1.2.dp, HomeCardNeonBorder.copy(alpha = 0.60f)),
-                    modifier = Modifier.size(46.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.FindInPage,
-                            contentDescription = "Auditoria de produtos duplicados",
-                            tint = V19PurpleSoftText,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
+                Mv3dIcon(
+                    iconRes = R.drawable.mv3d_buscar,
+                    contentDescription = "Auditoria de produtos duplicados",
+                    size = 42.dp,
+                    modifier = Modifier.testTag("duplicate_audit_section_search_icon"),
+                )
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -179,12 +171,12 @@ internal fun DuplicateProductsAuditSectionCard(
                         onClick = onVerifyClick,
                     )
                     .testTag("verify_duplicate_products_button")
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (auditState.isAnalyzing) {
                         CircularProgressIndicator(
@@ -195,11 +187,12 @@ internal fun DuplicateProductsAuditSectionCard(
                             strokeWidth = 2.5.dp,
                         )
                     } else {
-                        Icon(
-                            imageVector = Icons.Filled.FindInPage,
+                        Mv3dIcon(
+                            iconRes = R.drawable.mv3d_buscar,
                             contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
+                            size = 22.dp,
+                            alpha = if (buttonEnabled) 1f else 0.56f,
+                            modifier = Modifier.testTag("verify_duplicate_products_search_icon"),
                         )
                     }
                     Text(
