@@ -529,15 +529,22 @@ internal fun DuplicateProductsAuditResultsDialog(
                                 testTag = "duplicate_audit_exact_section_header",
                             )
                         }
-                        items(
-                            items = report.exactDuplicateGroups,
-                            key = { it.groupId },
-                        ) { group ->
-                            ExactDuplicateGroupCard(
-                                group = group,
-                                isActionBusy = auditState.isBusy,
-                                onRequestDelete = onRequestDelete,
-                            )
+                        report.exactDuplicateGroups.forEach { group ->
+                            item(key = "${group.groupId}_header") {
+                                ExactDuplicateGroupHeaderCard(group = group)
+                            }
+                            items(
+                                items = group.entries.mapIndexed { idx, entry -> idx to entry },
+                                key = { (_, entry) -> "${group.groupId}_entry_${entry.product.id}" },
+                            ) { (idx, entry) ->
+                                AuditedProductEntryCard(
+                                    entry = entry,
+                                    copyLabel = "Registro ${idx + 1} de ${group.copyCount}",
+                                    accentBorderColor = V19ErrorSoft.copy(alpha = 0.55f),
+                                    isActionBusy = auditState.isBusy,
+                                    onRequestDelete = { onRequestDelete(entry) },
+                                )
+                            }
                         }
                     }
 
@@ -550,15 +557,22 @@ internal fun DuplicateProductsAuditResultsDialog(
                                 testTag = "duplicate_audit_similar_section_header",
                             )
                         }
-                        items(
-                            items = report.similarProductGroups,
-                            key = { it.groupId },
-                        ) { group ->
-                            SimilarProductGroupCard(
-                                group = group,
-                                isActionBusy = auditState.isBusy,
-                                onRequestDelete = onRequestDelete,
-                            )
+                        report.similarProductGroups.forEach { group ->
+                            item(key = "${group.groupId}_header") {
+                                SimilarProductGroupHeaderCard(group = group)
+                            }
+                            items(
+                                items = group.entries.mapIndexed { idx, entry -> idx to entry },
+                                key = { (_, entry) -> "${group.groupId}_entry_${entry.product.id}" },
+                            ) { (idx, entry) ->
+                                AuditedProductEntryCard(
+                                    entry = entry,
+                                    copyLabel = "Registro ${idx + 1} de ${group.entries.size}",
+                                    accentBorderColor = V19GoldAccent.copy(alpha = 0.55f),
+                                    isActionBusy = auditState.isBusy,
+                                    onRequestDelete = { onRequestDelete(entry) },
+                                )
+                            }
                         }
                     }
                 }
@@ -648,69 +662,53 @@ private fun AuditSectionHeader(
 }
 
 @Composable
-private fun ExactDuplicateGroupCard(
+private fun ExactDuplicateGroupHeaderCard(
     group: ExactDuplicateGroup,
-    isActionBusy: Boolean,
-    onRequestDelete: (AuditedProductEntry) -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("exact_duplicate_group_${group.groupId}"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Color.Transparent,
-        border = BorderStroke(1.2.dp, V19ErrorSoft.copy(alpha = 0.60f)),
+        border = BorderStroke(1.2.dp, V19ErrorSoft.copy(alpha = 0.65f)),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color(0xE036132B), Color(0xDC200B1E))))
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = group.displayName,
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
-                        color = Color.White,
-                    )
-                    Text(
-                        text = CurrencyFormatter.formatBrl(MoneyCents(group.priceCents)),
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = V19PurpleSoftText,
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = V19ErrorSoft.copy(alpha = 0.18f),
-                    border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.65f)),
-                ) {
-                    Text(
-                        text = "${group.copyCount} cópias idênticas",
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = V19ErrorSoft,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.displayName,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp,
+                    color = Color.White,
+                )
+                Text(
+                    text = CurrencyFormatter.formatBrl(MoneyCents(group.priceCents)),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = V19PurpleSoftText,
+                )
             }
-
-            group.entries.forEachIndexed { idx, entry ->
-                AuditedProductEntryCard(
-                    entry = entry,
-                    copyLabel = "Registro ${idx + 1} de ${group.copyCount}",
-                    isActionBusy = isActionBusy,
-                    onRequestDelete = { onRequestDelete(entry) },
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = V19ErrorSoft.copy(alpha = 0.18f),
+                border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.65f)),
+            ) {
+                Text(
+                    text = "${group.copyCount} cópias idênticas",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = V19ErrorSoft,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
         }
@@ -718,18 +716,16 @@ private fun ExactDuplicateGroupCard(
 }
 
 @Composable
-private fun SimilarProductGroupCard(
+private fun SimilarProductGroupHeaderCard(
     group: SimilarProductGroup,
-    isActionBusy: Boolean,
-    onRequestDelete: (AuditedProductEntry) -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("similar_product_group_${group.groupId}"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Color.Transparent,
-        border = BorderStroke(1.2.dp, V19GoldAccent.copy(alpha = 0.60f)),
+        border = BorderStroke(1.2.dp, V19GoldAccent.copy(alpha = 0.65f)),
     ) {
         Column(
             modifier = Modifier
@@ -805,15 +801,6 @@ private fun SimilarProductGroupCard(
                     }
                 }
             }
-
-            group.entries.forEachIndexed { idx, entry ->
-                AuditedProductEntryCard(
-                    entry = entry,
-                    copyLabel = "Registro ${idx + 1} de ${group.entries.size}",
-                    isActionBusy = isActionBusy,
-                    onRequestDelete = { onRequestDelete(entry) },
-                )
-            }
         }
     }
 }
@@ -822,6 +809,7 @@ private fun SimilarProductGroupCard(
 private fun AuditedProductEntryCard(
     entry: AuditedProductEntry,
     copyLabel: String,
+    accentBorderColor: Color,
     isActionBusy: Boolean,
     onRequestDelete: () -> Unit,
 ) {
@@ -832,7 +820,7 @@ private fun AuditedProductEntryCard(
             .testTag("audited_product_card_${product.id}"),
         shape = RoundedCornerShape(14.dp),
         color = GlassInnerBoxBg,
-        border = BorderStroke(1.dp, GlassNeonBorder15),
+        border = BorderStroke(1.dp, accentBorderColor),
     ) {
         Column(
             modifier = Modifier

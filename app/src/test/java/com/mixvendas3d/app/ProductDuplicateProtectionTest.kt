@@ -19,7 +19,11 @@ import com.mixvendas3d.app.domain.calculation.ProductParticipantDraft
 import com.mixvendas3d.app.domain.models.FeeResponsibilityMode
 import com.mixvendas3d.app.domain.models.MoneyCents
 import com.mixvendas3d.app.ui.screens.CatalogViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,6 +66,20 @@ class ProductDuplicateProtectionTest {
         }
     }
 
+    private fun withCollectedCatalogViewModel(block: (CatalogViewModel) -> Unit) {
+        val vm = CatalogViewModel(app().catalogRepository)
+        val collectorScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val job: Job = collectorScope.launch {
+            vm.uiState.collect { }
+        }
+        try {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            block(vm)
+        } finally {
+            job.cancel()
+        }
+    }
+
     private fun awaitCondition(timeoutMs: Long = 5_000L, predicate: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -90,9 +108,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario01_sameNameDifferentPrice_savesWithoutAlert() {
+    fun scenario01_sameNameDifferentPrice_savesWithoutAlert() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val ana = runBlocking(Dispatchers.IO) {
             val person = repo.createPerson("Ana")
             repo.createProduct(
@@ -107,9 +124,11 @@ class ProductDuplicateProtectionTest {
         }
 
         vm.openNewProductEditor()
+        awaitCondition { vm.uiState.value.products.editor.isOpen }
         vm.onProductNameChanged("Dragao 3D")
         vm.onProductPriceChanged("7500")
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "7500")
         vm.saveProduct()
 
         awaitCondition { !vm.uiState.value.products.editor.isOpen }
@@ -121,9 +140,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario02_sameNameSamePriceDifferentCategory_showsConfirmationWithDiff() {
+    fun scenario02_sameNameSamePriceDifferentCategory_showsConfirmationWithDiff() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, catA, catB) = runBlocking(Dispatchers.IO) {
             val person = repo.createPerson("Ana")
             val cA = repo.createProductCategory("ANIMAIS", null)
@@ -145,6 +163,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("10000")
         vm.onProductCategoryChanged(catB.id)
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "10000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -158,9 +177,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario03_sameNameSamePriceDifferentSubcategory_showsConfirmationWithDiff() {
+    fun scenario03_sameNameSamePriceDifferentSubcategory_showsConfirmationWithDiff() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, catA, sub1, sub2) = runBlocking(Dispatchers.IO) {
             val person = repo.createPerson("Ana")
             val cA = repo.createProductCategory("CHAVEIROS", null)
@@ -189,6 +207,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductCategoryChanged(category.id)
         vm.onProductSubcategoryChanged(subNew.id)
         vm.toggleProductParticipant(person.id)
+        vm.onParticipantAmountChanged(person.id, "2500")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -197,9 +216,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario04_sameNameSamePriceDifferentParticipants_showsAddedAndRemovedPeople() {
+    fun scenario04_sameNameSamePriceDifferentParticipants_showsAddedAndRemovedPeople() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, bruno) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val p2 = repo.createPerson("Bruno")
@@ -218,6 +236,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductNameChanged("VASO GEOMÉTRICO")
         vm.onProductPriceChanged("6000")
         vm.toggleProductParticipant(bruno.id)
+        vm.onParticipantAmountChanged(bruno.id, "6000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -228,9 +247,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario05_sameParticipantsDifferentIndividualAmounts_showsAmountChangedDiff() {
+    fun scenario05_sameParticipantsDifferentIndividualAmounts_showsAmountChangedDiff() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, bruno) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val p2 = repo.createPerson("Bruno")
@@ -270,9 +288,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario06_07_08_exactDuplicateNormalizationAndParticipantOrder_blocksDefinitively() {
+    fun scenario06_07_08_exactDuplicateNormalizationAndParticipantOrder_blocksDefinitively() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, bruno, cat) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val p2 = repo.createPerson("Bruno")
@@ -313,9 +330,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario09_cancelConfirmationAlert_preservesAllEditorFieldsAndDoesNotSave() {
+    fun scenario09_cancelConfirmationAlert_preservesAllEditorFieldsAndDoesNotSave() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, cat1, cat2) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val c1 = repo.createProductCategory("CAT A", null)
@@ -337,6 +353,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("4500")
         vm.onProductCategoryChanged(cat2.id)
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "4500")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -354,9 +371,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario10_confirmSaveAnyway_persistsOnceAndKeepsFutureProtectionActive() {
+    fun scenario10_confirmSaveAnyway_persistsOnceAndKeepsFutureProtectionActive() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, cat1, cat2) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val c1 = repo.createProductCategory("CAT 1", null)
@@ -378,6 +394,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("8000")
         vm.onProductCategoryChanged(cat2.id)
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "8000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -392,6 +409,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("8000")
         vm.onProductCategoryChanged(cat2.id)
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "8000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.errorMessage != null }
@@ -403,9 +421,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario11_multipleExistingSimilarProducts_allMatchesDisplayedInAlert() {
+    fun scenario11_multipleExistingSimilarProducts_allMatchesDisplayedInAlert() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, bruno, cat1, cat2, cat3) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val p2 = repo.createPerson("Bruno")
@@ -440,6 +457,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("5000")
         vm.onProductCategoryChanged(category3.id)
         vm.toggleProductParticipant(personAna.id)
+        vm.onParticipantAmountChanged(personAna.id, "5000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -448,9 +466,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario12_13_14_editingProduct_ignoresSelfBlocksExactAndConfirmsSimilarOnlyUpdatingEditedId() {
+    fun scenario12_13_14_editingProduct_ignoresSelfBlocksExactAndConfirmsSimilarOnlyUpdatingEditedId() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val seeded = runBlocking(Dispatchers.IO) {
             val ana = repo.createPerson("Ana")
             val cat1 = repo.createProductCategory("CAT A", null)
@@ -475,6 +492,7 @@ class ProductDuplicateProtectionTest {
             )
             listOf(ana, cat1, cat2, prod1, prod2)
         }
+        val anaPerson = seeded[0] as com.mixvendas3d.app.domain.models.Person
         val cat1 = seeded[1] as com.mixvendas3d.app.domain.models.ProductCategory
         val cat2 = seeded[2] as com.mixvendas3d.app.domain.models.ProductCategory
         val prod1 = seeded[3] as com.mixvendas3d.app.domain.models.Product
@@ -482,6 +500,7 @@ class ProductDuplicateProtectionTest {
 
         // Cenário 12: editar prod1 mantendo mesmos 4 critérios (apenas alterando ativo) não conflita consigo mesmo
         vm.openEditProductEditor(prod1)
+        awaitCondition { vm.uiState.value.products.editor.isOpen }
         vm.onProductActiveChanged(false)
         vm.saveProduct()
         awaitCondition { !vm.uiState.value.products.editor.isOpen }
@@ -490,8 +509,10 @@ class ProductDuplicateProtectionTest {
 
         // Cenário 13: editar prod2 para ficar idêntico a prod1 (mesmo nome, preço, categoria, participantes) bloqueia mesmo com prod1 inativo!
         vm.openEditProductEditor(prod2)
+        awaitCondition { vm.uiState.value.products.editor.isOpen }
         vm.onProductNameChanged("PEÇA BASE")
         vm.onProductPriceChanged("5000")
+        vm.onParticipantAmountChanged(anaPerson.id, "5000")
         vm.onProductCategoryChanged(cat1.id)
         vm.saveProduct()
         awaitCondition { vm.uiState.value.products.editor.errorMessage != null }
@@ -520,9 +541,8 @@ class ProductDuplicateProtectionTest {
     }
 
     @Test
-    fun scenario15_revalidationBeforeConfirmedSaveAndIgnoreNonCriteriaFields() {
+    fun scenario15_revalidationBeforeConfirmedSaveAndIgnoreNonCriteriaFields() = withCollectedCatalogViewModel { vm ->
         val repo = app().catalogRepository
-        val vm = CatalogViewModel(repo)
         val (ana, cat1, cat2) = runBlocking(Dispatchers.IO) {
             val p1 = repo.createPerson("Ana")
             val c1 = repo.createProductCategory("ORIG", null)
@@ -545,6 +565,7 @@ class ProductDuplicateProtectionTest {
         vm.onProductPriceChanged("9000")
         vm.onProductCategoryChanged(cat2.id)
         vm.toggleProductParticipant(ana.id)
+        vm.onParticipantAmountChanged(ana.id, "9000")
         vm.saveProduct()
 
         awaitCondition { vm.uiState.value.products.editor.pendingDuplicateConfirmation != null }
@@ -599,13 +620,14 @@ class ProductDuplicateProtectionTest {
         waitForTag("screen_products")
 
         // Abre Novo Produto
-        composeRule.onNodeWithTag("products_new_button").performClick()
-        waitForTag("product_editor_name_input")
+        composeRule.onNodeWithTag("new_product_button").performScrollTo().performClick()
+        waitForTag("product_name_input")
 
-        composeRule.onNodeWithTag("product_editor_name_input").performTextReplacement("ESTÁTUA HERO")
-        composeRule.onNodeWithTag("product_editor_price_input").performTextReplacement("10000")
-        composeRule.onNodeWithTag("product_editor_participant_toggle_${bruno.id}").performScrollTo().performClick()
-        composeRule.onNodeWithTag("product_editor_save_button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("product_name_input").performTextReplacement("ESTÁTUA HERO")
+        composeRule.onNodeWithTag("product_price_input").performTextReplacement("10000")
+        composeRule.onNodeWithTag("product_participant_check_${bruno.id}").performScrollTo().performClick()
+        composeRule.onNodeWithTag("product_participant_amount_${bruno.id}").performScrollTo().performTextReplacement("10000")
+        composeRule.onNodeWithTag("save_product_button").performScrollTo().performClick()
 
         // Diálogo de confirmação deve abrir com título exato
         waitForTag("product_duplicate_confirmation_dialog")
@@ -617,7 +639,7 @@ class ProductDuplicateProtectionTest {
         assertEquals(1, runBlocking(Dispatchers.IO) { application.catalogRepository.getAllProductsSnapshot().size })
 
         // Tenta salvar novamente e confirma "Cadastrar mesmo assim"
-        composeRule.onNodeWithTag("product_editor_save_button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("save_product_button").performScrollTo().performClick()
         waitForTag("product_duplicate_confirmation_dialog")
         composeRule.onNodeWithText("Cadastrar mesmo assim").assertIsDisplayed()
         composeRule.onNodeWithTag("product_duplicate_confirm_button").performClick()
