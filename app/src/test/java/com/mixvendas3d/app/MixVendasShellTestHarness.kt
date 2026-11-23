@@ -63,6 +63,7 @@ class MixVendasShellTestHarness(
             SystemUpdateViewModel.provideFactory(
                 database = app.database,
                 repository = app.systemUpdateRepository,
+                catalogRepository = app.catalogRepository,
             ),
         )[SystemUpdateViewModel::class.java]
 

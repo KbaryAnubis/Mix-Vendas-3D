@@ -5,7 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mixvendas3d.app.data.local.AppDatabase
+import com.mixvendas3d.app.data.local.dao.ProductDeletionResult
+import com.mixvendas3d.app.data.repository.CatalogRepository
+import com.mixvendas3d.app.data.repository.RoomCatalogRepository
 import com.mixvendas3d.app.data.repository.SystemUpdateRepository
+import com.mixvendas3d.app.domain.calculation.AuditedProductEntry
+import com.mixvendas3d.app.domain.calculation.ProductDuplicateAuditReport
+import com.mixvendas3d.app.domain.calculation.ProductDuplicateDetector
 import com.mixvendas3d.app.domain.export.JsonBackupExporter
 import com.mixvendas3d.app.domain.export.JsonBackupResult
 import com.mixvendas3d.app.domain.update.SystemUpdateAnalysisResult
@@ -21,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -38,6 +45,22 @@ enum class SystemUpdatePhase {
     UNDO_FAILED,
 }
 
+data class DuplicateProductsAuditUiState(
+    val isAnalyzing: Boolean = false,
+    val hasCompletedAnalysis: Boolean = false,
+    val report: ProductDuplicateAuditReport? = null,
+    val isResultsOpen: Boolean = false,
+    val errorMessage: String? = null,
+    val feedbackMessage: String? = null,
+    val feedbackIsError: Boolean = false,
+    val pendingDeleteTarget: AuditedProductEntry? = null,
+    val isDeleting: Boolean = false,
+    val catalogChangedSinceAnalysis: Boolean = false,
+) {
+    val isBusy: Boolean
+        get() = isAnalyzing || isDeleting
+}
+
 data class SystemUpdateUiState(
     val phase: SystemUpdatePhase = SystemUpdatePhase.IDLE,
     val analysis: SystemUpdateAnalysisResult? = null,
@@ -52,6 +75,7 @@ data class SystemUpdateUiState(
     val pendingBackupDocumentRequest: PendingJsonBackupDocumentRequest? = null,
     val lastBackupFileName: String? = null,
     val lastBackupRecordsCount: Int? = null,
+    val duplicateAudit: DuplicateProductsAuditUiState = DuplicateProductsAuditUiState(),
 ) {
     val isPreviewAvailable: Boolean
         get() = analysis != null &&
@@ -89,19 +113,218 @@ data class SystemUpdateUiState(
 class SystemUpdateViewModel(
     private val repository: SystemUpdateRepository,
     private val generateBackup: suspend () -> JsonBackupResult,
+    private val catalogRepository: CatalogRepository? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SystemUpdateUiState())
     val uiState: StateFlow<SystemUpdateUiState> = _uiState.asStateFlow()
 
     private val operationLock = AtomicBoolean(false)
+    private val duplicateAuditLock = AtomicBoolean(false)
 
     @Volatile
     private var activePendingBackup: JsonBackupResult? = null
 
     init {
         refreshUndoStatus()
+        observeCatalogChangesForAuditStaleness()
+    }
+
+    private fun observeCatalogChangesForAuditStaleness() {
+        val repo = catalogRepository ?: return
+        viewModelScope.launch {
+            repo.observeAllProducts()
+                .drop(1)
+                .collect {
+                    val audit = _uiState.value.duplicateAudit
+                    if (audit.hasCompletedAnalysis && audit.report != null && !audit.isBusy) {
+                        updateDuplicateAudit { it.copy(catalogChangedSinceAnalysis = true) }
+                    }
+                }
+        }
+    }
+
+    private inline fun updateDuplicateAudit(
+        transform: (DuplicateProductsAuditUiState) -> DuplicateProductsAuditUiState,
+    ) {
+        val current = _uiState.value
+        _uiState.value = current.copy(duplicateAudit = transform(current.duplicateAudit))
+    }
+
+    fun analyzeDuplicateProducts() {
+        val repo = catalogRepository
+        if (repo == null) {
+            updateDuplicateAudit {
+                it.copy(
+                    isAnalyzing = false,
+                    errorMessage = "Repositório do catálogo indisponível para auditoria.",
+                )
+            }
+            return
+        }
+        val currentAudit = _uiState.value.duplicateAudit
+        if (currentAudit.isBusy || !duplicateAuditLock.compareAndSet(false, true)) return
+
+        updateDuplicateAudit {
+            it.copy(
+                isAnalyzing = true,
+                errorMessage = null,
+                feedbackMessage = null,
+                feedbackIsError = false,
+                pendingDeleteTarget = null,
+                catalogChangedSinceAnalysis = false,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val report = runDuplicateAudit(repo)
+                updateDuplicateAudit {
+                    it.copy(
+                        isAnalyzing = false,
+                        hasCompletedAnalysis = true,
+                        report = report,
+                        isResultsOpen = true,
+                        errorMessage = null,
+                        catalogChangedSinceAnalysis = false,
+                    )
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (ex: Throwable) {
+                updateDuplicateAudit {
+                    it.copy(
+                        isAnalyzing = false,
+                        errorMessage = ex.message ?: "Não foi possível analisar os produtos duplicados.",
+                    )
+                }
+            } finally {
+                duplicateAuditLock.set(false)
+            }
+        }
+    }
+
+    fun openDuplicateAuditResults() {
+        val audit = _uiState.value.duplicateAudit
+        if (audit.report != null) {
+            updateDuplicateAudit { it.copy(isResultsOpen = true) }
+        } else {
+            analyzeDuplicateProducts()
+        }
+    }
+
+    fun closeDuplicateAuditResults() {
+        val audit = _uiState.value.duplicateAudit
+        if (audit.isDeleting) return
+        updateDuplicateAudit {
+            it.copy(
+                isResultsOpen = false,
+                pendingDeleteTarget = null,
+            )
+        }
+    }
+
+    fun requestDeleteAuditedProduct(entry: AuditedProductEntry) {
+        val audit = _uiState.value.duplicateAudit
+        if (audit.isBusy) return
+        if (!entry.canDelete) {
+            updateDuplicateAudit {
+                it.copy(
+                    feedbackMessage = "Este produto está vinculado a ${entry.linkedSalesCount} venda(s) e não pode ser excluído para preservar o histórico financeiro.",
+                    feedbackIsError = true,
+                )
+            }
+            return
+        }
+        updateDuplicateAudit {
+            it.copy(
+                pendingDeleteTarget = entry,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            )
+        }
+    }
+
+    fun dismissDeleteAuditedProduct() {
+        val audit = _uiState.value.duplicateAudit
+        if (audit.isDeleting) return
+        updateDuplicateAudit { it.copy(pendingDeleteTarget = null) }
+    }
+
+    fun confirmDeleteAuditedProduct() {
+        val repo = catalogRepository ?: return
+        val target = _uiState.value.duplicateAudit.pendingDeleteTarget ?: return
+        if (!duplicateAuditLock.compareAndSet(false, true)) return
+
+        updateDuplicateAudit {
+            it.copy(
+                isDeleting = true,
+                errorMessage = null,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val deletionResult = withContext(ioDispatcher) {
+                    repo.deleteProductSafely(target.product.id)
+                }
+                val refreshedReport = runDuplicateAudit(repo)
+                val (feedbackMsg, isErr) = when (deletionResult) {
+                    ProductDeletionResult.Deleted -> {
+                        "Produto \"${target.product.name}\" excluído com segurança. Resultados atualizados." to false
+                    }
+                    is ProductDeletionResult.BlockedBySales -> {
+                        "Exclusão bloqueada: o produto \"${target.product.name}\" possui ${deletionResult.salesCount} venda(s) vinculada(s) no histórico." to true
+                    }
+                    ProductDeletionResult.NotFound -> {
+                        "O produto \"${target.product.name}\" já havia sido removido anteriormente. Resultados atualizados." to false
+                    }
+                }
+                updateDuplicateAudit {
+                    it.copy(
+                        isDeleting = false,
+                        hasCompletedAnalysis = true,
+                        report = refreshedReport,
+                        pendingDeleteTarget = null,
+                        feedbackMessage = feedbackMsg,
+                        feedbackIsError = isErr,
+                        catalogChangedSinceAnalysis = false,
+                    )
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (ex: Throwable) {
+                updateDuplicateAudit {
+                    it.copy(
+                        isDeleting = false,
+                        pendingDeleteTarget = null,
+                        feedbackMessage = ex.message ?: "Não foi possível excluir o produto selecionado.",
+                        feedbackIsError = true,
+                    )
+                }
+            } finally {
+                duplicateAuditLock.set(false)
+            }
+        }
+    }
+
+    private suspend fun runDuplicateAudit(
+        repo: CatalogRepository,
+    ): ProductDuplicateAuditReport {
+        val snapshot = withContext(ioDispatcher) {
+            repo.loadCatalogAuditSnapshot()
+        }
+        return withContext(computationDispatcher) {
+            ProductDuplicateDetector.auditCatalog(
+                products = snapshot.products,
+                categoriesById = snapshot.categoriesById,
+                salesCountByProductId = snapshot.salesCountByProductId,
+            )
+        }
     }
 
     fun refreshUndoStatus() {
@@ -407,12 +630,17 @@ class SystemUpdateViewModel(
         fun provideFactory(
             database: AppDatabase,
             repository: SystemUpdateRepository,
+            catalogRepository: CatalogRepository = RoomCatalogRepository(
+                personDao = database.personDao(),
+                productDao = database.productDao(),
+            ),
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return SystemUpdateViewModel(
                     repository = repository,
                     generateBackup = { JsonBackupExporter.export(database) },
+                    catalogRepository = catalogRepository,
                 ) as T
             }
         }

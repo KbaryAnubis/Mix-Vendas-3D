@@ -62,6 +62,7 @@ import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.ui.components.Mv3dIcon
 import com.mixvendas3d.app.ui.components.ProductsDropdownField
+import com.mixvendas3d.app.ui.components.ProductSimilarDuplicateDialog
 import com.mixvendas3d.app.ui.components.ProductsFieldLabel
 import com.mixvendas3d.app.ui.components.ProductsGlassCard
 import com.mixvendas3d.app.ui.components.ProductsMonetaryTextField
@@ -128,6 +129,8 @@ fun ProductsScreen(
     onCategoryEditorParentChanged: (String?) -> Unit = {},
     onCategoryEditorNameChanged: (String) -> Unit = {},
     onSaveCategory: () -> Unit = {},
+    onDismissDuplicateConfirmation: () -> Unit = {},
+    onConfirmSaveDespiteSimilarProducts: () -> Unit = {},
     onRestoreProductsFlowState: (
         selectedCategoryFilterId: String?,
         categoryManagerOpen: Boolean,
@@ -244,6 +247,16 @@ fun ProductsScreen(
                 modifier = modifier,
             )
         }
+    }
+
+    // Diálogo de confirmação para produto semelhante (mesmo nome e valor, com diferenças)
+    productsState.editor.pendingDuplicateConfirmation?.let { pending ->
+        ProductSimilarDuplicateDialog(
+            pending = pending,
+            isSaving = productsState.editor.isSaving,
+            onCancel = onDismissDuplicateConfirmation,
+            onConfirmSaveAnyway = onConfirmSaveDespiteSimilarProducts,
+        )
     }
 
     // Diálogo de confirmação para exclusão de produto

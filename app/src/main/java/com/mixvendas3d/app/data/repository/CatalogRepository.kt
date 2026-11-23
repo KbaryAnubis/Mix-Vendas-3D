@@ -68,7 +68,17 @@ interface CatalogRepository {
     suspend fun setProductActive(productId: String, active: Boolean)
     suspend fun countSalesUsingProduct(productId: String): Int
     suspend fun deleteProductSafely(productId: String): ProductDeletionResult
+    suspend fun getAllProductsSnapshot(): List<Product>
+    suspend fun getAllCategoriesSnapshot(): List<ProductCategory>
+    suspend fun loadCatalogAuditSnapshot(): CatalogAuditSnapshot
 }
+
+data class CatalogAuditSnapshot(
+    val products: List<Product>,
+    val categoriesById: Map<String, ProductCategory>,
+    val salesCountByProductId: Map<String, Int>,
+    val peopleNamesById: Map<String, String> = emptyMap(),
+)
 
 class RoomCatalogRepository(
     private val personDao: PersonDao,
@@ -350,6 +360,67 @@ class RoomCatalogRepository(
 
     override suspend fun deleteProductSafely(productId: String): ProductDeletionResult =
         productDao.deleteProductSafely(productId)
+
+    override suspend fun getAllProductsSnapshot(): List<Product> {
+        val peopleById = personDao.getAllPeople().associateBy { it.id }
+        return buildProductsSnapshot(peopleById)
+    }
+
+    private suspend fun buildProductsSnapshot(
+        peopleById: Map<String, PersonEntity>,
+    ): List<Product> {
+        val products = productDao.getAllProducts()
+        val participantsByProductId = productDao.getAllProductParticipants()
+            .groupBy { it.productId }
+        return products.map { entity ->
+            val productParticipants = participantsByProductId[entity.id]
+                .orEmpty()
+                .sortedBy { it.sortOrder }
+                .mapNotNull { participant ->
+                    val person = peopleById[participant.personId] ?: return@mapNotNull null
+                    ProductParticipantSplit(
+                        personId = person.id,
+                        personName = person.name,
+                        personColorIndex = person.colorIndex,
+                        amount = MoneyCents(participant.amountCents),
+                    )
+                }
+            Product(
+                id = entity.id,
+                name = entity.name,
+                price = MoneyCents(entity.priceCents),
+                active = entity.active,
+                feeResponsibilityMode = FeeResponsibilityMode.fromStorageKeyOrNull(entity.feeResponsibilityMode)
+                    ?: error(
+                        "Modo de responsabilidade de tarifa inválido (${entity.feeResponsibilityMode}) " +
+                            "no produto \"${entity.name}\" (id=${entity.id}).",
+                    ),
+                feeOwnerPersonId = entity.feeOwnerPersonId,
+                participants = productParticipants,
+                createdAtEpochMs = entity.createdAtEpochMs,
+                updatedAtEpochMs = entity.updatedAtEpochMs,
+                categoryId = entity.categoryId,
+                subcategoryId = entity.subcategoryId,
+            )
+        }
+    }
+
+    override suspend fun getAllCategoriesSnapshot(): List<ProductCategory> =
+        productDao.getAllCategories().map { it.toDomain() }
+
+    override suspend fun loadCatalogAuditSnapshot(): CatalogAuditSnapshot {
+        val peopleById = personDao.getAllPeople().associateBy { it.id }
+        val products = buildProductsSnapshot(peopleById)
+        val categoriesById = getAllCategoriesSnapshot().associateBy { it.id }
+        val salesCountByProductId = productDao.getSalesCountsByProduct()
+            .associate { it.productId to it.salesCount }
+        return CatalogAuditSnapshot(
+            products = products,
+            categoriesById = categoriesById,
+            salesCountByProductId = salesCountByProductId,
+            peopleNamesById = peopleById.mapValues { it.value.name },
+        )
+    }
 
     override suspend fun setProductActive(productId: String, active: Boolean) {
         productDao.getWithParticipantsById(productId)

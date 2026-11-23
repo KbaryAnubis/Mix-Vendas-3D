@@ -84,6 +84,8 @@ fun MaisDetailScreen(
                 onCategoryEditorParentChanged = catalogViewModel::onCategoryEditorParentChanged,
                 onCategoryEditorNameChanged = catalogViewModel::onCategoryEditorNameChanged,
                 onSaveCategory = catalogViewModel::saveCategory,
+                onDismissDuplicateConfirmation = catalogViewModel::dismissDuplicateConfirmation,
+                onConfirmSaveDespiteSimilarProducts = catalogViewModel::confirmSaveDespiteSimilarProducts,
                 onRestoreProductsFlowState = catalogViewModel::restoreProductsFlowStateIfIdle,
             )
         }
@@ -166,6 +168,12 @@ fun MaisDetailScreen(
                 onDismissUndoDialog = systemUpdateViewModel::cancelConfirmUndo,
                 onConfirmUndo = systemUpdateViewModel::confirmAndRevertLastUpdate,
                 onRefreshUndoStatus = systemUpdateViewModel::refreshUndoStatus,
+                onVerifyDuplicateProductsClick = systemUpdateViewModel::analyzeDuplicateProducts,
+                onOpenDuplicateAuditResultsClick = systemUpdateViewModel::openDuplicateAuditResults,
+                onCloseDuplicateAuditResults = systemUpdateViewModel::closeDuplicateAuditResults,
+                onRequestDeleteAuditedProduct = systemUpdateViewModel::requestDeleteAuditedProduct,
+                onDismissDeleteAuditedProduct = systemUpdateViewModel::dismissDeleteAuditedProduct,
+                onConfirmDeleteAuditedProduct = systemUpdateViewModel::confirmDeleteAuditedProduct,
                 modifier = modifier,
             )
         }

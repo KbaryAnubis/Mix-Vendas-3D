@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.mixvendas3d.app.data.repository.CatalogRepository
 import com.mixvendas3d.app.data.local.dao.ProductDeletionResult
 import com.mixvendas3d.app.domain.calculation.CatalogValidationException
+import com.mixvendas3d.app.domain.calculation.CatalogValidator
+import com.mixvendas3d.app.domain.calculation.ProductDuplicateCandidate
+import com.mixvendas3d.app.domain.calculation.ProductDuplicateCheckResult
+import com.mixvendas3d.app.domain.calculation.ProductDuplicateDetector
 import com.mixvendas3d.app.domain.calculation.ProductParticipantDraft
 import com.mixvendas3d.app.domain.calculation.ProductPriceSplitCalculator
 import com.mixvendas3d.app.domain.models.FeeResponsibilityMode
@@ -35,6 +39,11 @@ data class NamesSectionUiState(
     val isSaving: Boolean = false,
 )
 
+data class PendingProductDuplicateConfirmation(
+    val isEditing: Boolean,
+    val result: ProductDuplicateCheckResult.SimilarRequiresConfirmation,
+)
+
 data class ProductEditorUiState(
     val isOpen: Boolean = false,
     val editingProductId: String? = null,
@@ -50,6 +59,7 @@ data class ProductEditorUiState(
     val feeOwnerPersonId: String? = null,
     val errorMessage: String? = null,
     val isSaving: Boolean = false,
+    val pendingDuplicateConfirmation: PendingProductDuplicateConfirmation? = null,
 )
 
 data class ProductDeletionPrompt(
@@ -470,6 +480,9 @@ class CatalogViewModel(
                 }
             }
             form.categoryManagerOpen -> closeCategoryManager()
+            form.editor.isOpen && form.editor.pendingDuplicateConfirmation != null -> {
+                dismissDuplicateConfirmation()
+            }
             form.editor.isOpen -> closeProductEditor()
             else -> onExitProducts()
         }
@@ -532,7 +545,7 @@ class CatalogViewModel(
 
     fun onProductNameChanged(value: String) {
         val upper = TextNormalization.toRegistrationUppercase(value)
-        updateEditor { it.copy(nameInput = upper, errorMessage = null) }
+        updateEditor { it.copy(nameInput = upper, errorMessage = null, pendingDuplicateConfirmation = null) }
     }
 
     fun onProductPriceChanged(value: String) {
@@ -548,6 +561,7 @@ class CatalogViewModel(
                 priceInput = masked,
                 participantAmountInputs = recalculatedInputs,
                 errorMessage = null,
+                pendingDuplicateConfirmation = null,
             )
         }
     }
@@ -562,12 +576,17 @@ class CatalogViewModel(
             val keepSubcategory = editor.subcategoryId?.takeIf { subId ->
                 categories.any { it.id == subId && it.parentId == categoryId }
             }
-            editor.copy(categoryId = categoryId, subcategoryId = keepSubcategory, errorMessage = null)
+            editor.copy(
+                categoryId = categoryId,
+                subcategoryId = keepSubcategory,
+                errorMessage = null,
+                pendingDuplicateConfirmation = null,
+            )
         }
     }
 
     fun onProductSubcategoryChanged(subcategoryId: String?) {
-        updateEditor { it.copy(subcategoryId = subcategoryId, errorMessage = null) }
+        updateEditor { it.copy(subcategoryId = subcategoryId, errorMessage = null, pendingDuplicateConfirmation = null) }
     }
 
     fun createProductCategory(name: String, parentId: String? = null) {
@@ -663,6 +682,7 @@ class CatalogViewModel(
                 lastEditedParticipantId = splitResult.lastEditedParticipantId,
                 feeOwnerPersonId = nextOwner,
                 errorMessage = null,
+                pendingDuplicateConfirmation = null,
             )
         }
     }
@@ -680,6 +700,7 @@ class CatalogViewModel(
                 participantAmountInputs = splitResult.updatedInputs,
                 lastEditedParticipantId = splitResult.lastEditedParticipantId,
                 errorMessage = null,
+                pendingDuplicateConfirmation = null,
             )
         }
     }
@@ -707,13 +728,30 @@ class CatalogViewModel(
         updateEditor { it.copy(feeOwnerPersonId = personId, errorMessage = null) }
     }
 
+    fun dismissDuplicateConfirmation() {
+        updateEditor { it.copy(pendingDuplicateConfirmation = null, isSaving = false) }
+    }
+
     fun saveProduct() {
+        executeProductSave(allowSimilarDuplicate = false)
+    }
+
+    fun confirmSaveDespiteSimilarProducts() {
+        executeProductSave(allowSimilarDuplicate = true)
+    }
+
+    private fun executeProductSave(allowSimilarDuplicate: Boolean) {
         val editor = productsFormFlow.value.editor
         if (editor.isSaving) return
 
         val parsedPriceCents = CurrencyFormatter.parseBrlToCents(editor.priceInput)
         if (parsedPriceCents == null) {
-            updateEditor { it.copy(errorMessage = "Informe um preço padrão válido em reais (ex.: 22,00).") }
+            updateEditor {
+                it.copy(
+                    errorMessage = "Informe um preço padrão válido em reais (ex.: 22,00).",
+                    pendingDuplicateConfirmation = null,
+                )
+            }
             return
         }
 
@@ -723,18 +761,85 @@ class CatalogViewModel(
             val parsedCents = CurrencyFormatter.parseBrlToCents(rawInput)
             if (parsedCents == null) {
                 updateEditor {
-                    it.copy(errorMessage = "Informe um valor em reais válido para cada participante marcado.")
+                    it.copy(
+                        errorMessage = "Informe um valor em reais válido para cada participante marcado.",
+                        pendingDuplicateConfirmation = null,
+                    )
                 }
                 return
             }
             drafts.add(ProductParticipantDraft(personId = personId, amount = MoneyCents(parsedCents)))
         }
 
-        updateEditor { it.copy(isSaving = true, errorMessage = null) }
+        updateEditor {
+            it.copy(
+                isSaving = true,
+                errorMessage = null,
+                pendingDuplicateConfirmation = if (allowSimilarDuplicate) it.pendingDuplicateConfirmation else null,
+            )
+        }
 
         viewModelScope.launch {
             try {
                 val normalizedUpperName = TextNormalization.toRegistrationUppercase(editor.nameInput)
+                val snapshot = catalogRepository.loadCatalogAuditSnapshot()
+                val existingPersonIds = snapshot.peopleNamesById.keys
+                val validated = CatalogValidator.validateProductInput(
+                    rawName = normalizedUpperName,
+                    price = MoneyCents(parsedPriceCents),
+                    active = editor.active,
+                    participants = drafts,
+                    existingPersonIds = existingPersonIds,
+                    feeResponsibilityMode = editor.feeResponsibilityMode,
+                    feeOwnerPersonId = editor.feeOwnerPersonId,
+                )
+
+                val candidate = ProductDuplicateCandidate(
+                    displayName = validated.name,
+                    priceCents = validated.price.rawCents,
+                    categoryId = editor.categoryId,
+                    subcategoryId = editor.subcategoryId,
+                    participantsByPersonId = validated.participants.associate { it.personId to it.amount.rawCents },
+                    participantNamesById = snapshot.peopleNamesById,
+                )
+                val duplicateResult = ProductDuplicateDetector.evaluateCandidate(
+                    candidate = candidate,
+                    existingProducts = snapshot.products,
+                    categoriesById = snapshot.categoriesById,
+                    excludingProductId = editor.editingProductId,
+                )
+
+                when (duplicateResult) {
+                    is ProductDuplicateCheckResult.ExactDuplicateBlocked -> {
+                        updateEditor {
+                            it.copy(
+                                isSaving = false,
+                                errorMessage = duplicateResult.message,
+                                pendingDuplicateConfirmation = null,
+                            )
+                        }
+                        return@launch
+                    }
+
+                    is ProductDuplicateCheckResult.SimilarRequiresConfirmation -> {
+                        if (!allowSimilarDuplicate) {
+                            updateEditor {
+                                it.copy(
+                                    isSaving = false,
+                                    errorMessage = null,
+                                    pendingDuplicateConfirmation = PendingProductDuplicateConfirmation(
+                                        isEditing = editor.editingProductId != null,
+                                        result = duplicateResult,
+                                    ),
+                                )
+                            }
+                            return@launch
+                        }
+                    }
+
+                    ProductDuplicateCheckResult.NoConflict -> Unit
+                }
+
                 if (editor.editingProductId == null) {
                     val created = catalogRepository.createProduct(
                         name = normalizedUpperName,
@@ -770,10 +875,20 @@ class CatalogViewModel(
                     )
                 }
             } catch (ex: CatalogValidationException) {
-                updateEditor { it.copy(isSaving = false, errorMessage = ex.message) }
+                updateEditor {
+                    it.copy(
+                        isSaving = false,
+                        errorMessage = ex.message,
+                        pendingDuplicateConfirmation = null,
+                    )
+                }
             } catch (ex: Exception) {
                 updateEditor {
-                    it.copy(isSaving = false, errorMessage = ex.message ?: "Erro ao salvar produto.")
+                    it.copy(
+                        isSaving = false,
+                        errorMessage = ex.message ?: "Erro ao salvar produto.",
+                        pendingDuplicateConfirmation = null,
+                    )
                 }
             }
         }

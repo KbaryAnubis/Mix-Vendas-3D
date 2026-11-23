@@ -1,5 +1,6 @@
 package com.mixvendas3d.app.data.local.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -11,6 +12,11 @@ import com.mixvendas3d.app.data.local.entity.ProductEntity
 import com.mixvendas3d.app.data.local.entity.ProductParticipantEntity
 import com.mixvendas3d.app.data.local.entity.ProductWithParticipants
 import kotlinx.coroutines.flow.Flow
+
+data class ProductSalesCountRow(
+    @ColumnInfo(name = "product_id") val productId: String,
+    @ColumnInfo(name = "sales_count") val salesCount: Int,
+)
 
 sealed interface ProductCategoryDeletionResult {
     data object Deleted : ProductCategoryDeletionResult
@@ -122,6 +128,16 @@ interface ProductDao {
 
     @Query("SELECT COUNT(DISTINCT sale_id) FROM sale_items WHERE product_id = :productId")
     suspend fun countSalesUsingProduct(productId: String): Int
+
+    @Query(
+        """
+        SELECT product_id, COUNT(DISTINCT sale_id) AS sales_count
+        FROM sale_items
+        WHERE product_id IS NOT NULL
+        GROUP BY product_id
+        """,
+    )
+    suspend fun getSalesCountsByProduct(): List<ProductSalesCountRow>
 
     @Query("SELECT id FROM products WHERE id = :productId LIMIT 1")
     suspend fun getProductId(productId: String): String?

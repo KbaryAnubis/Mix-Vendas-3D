@@ -67,6 +67,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mixvendas3d.app.R
+import com.mixvendas3d.app.domain.calculation.AuditedProductEntry
 import com.mixvendas3d.app.ui.components.Mv3dIcon
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
@@ -104,6 +105,12 @@ fun UpdateSystemScreen(
     onDismissUndoDialog: () -> Unit,
     onConfirmUndo: () -> Unit,
     onRefreshUndoStatus: () -> Unit,
+    onVerifyDuplicateProductsClick: () -> Unit = {},
+    onOpenDuplicateAuditResultsClick: () -> Unit = {},
+    onCloseDuplicateAuditResults: () -> Unit = {},
+    onRequestDeleteAuditedProduct: (AuditedProductEntry) -> Unit = {},
+    onDismissDeleteAuditedProduct: () -> Unit = {},
+    onConfirmDeleteAuditedProduct: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val appContext = LocalContext.current.applicationContext
@@ -163,6 +170,25 @@ fun UpdateSystemScreen(
             summary = undoSummary,
             onDismiss = onDismissUndoDialog,
             onConfirm = onConfirmUndo,
+        )
+    }
+
+    val duplicateAudit = uiState.duplicateAudit
+    if (duplicateAudit.isResultsOpen && duplicateAudit.report != null) {
+        DuplicateProductsAuditResultsDialog(
+            auditState = duplicateAudit,
+            onReanalyze = onVerifyDuplicateProductsClick,
+            onRequestDelete = onRequestDeleteAuditedProduct,
+            onClose = onCloseDuplicateAuditResults,
+        )
+    }
+
+    duplicateAudit.pendingDeleteTarget?.let { pendingEntry ->
+        ConfirmDeleteAuditedProductDialog(
+            entry = pendingEntry,
+            isDeleting = duplicateAudit.isDeleting,
+            onDismiss = onDismissDeleteAuditedProduct,
+            onConfirmDelete = onConfirmDeleteAuditedProduct,
         )
     }
 
@@ -401,6 +427,12 @@ fun UpdateSystemScreen(
                         onRequestApplyUpdateClick = onRequestApplyUpdateClick,
                     )
                 }
+
+                DuplicateProductsAuditSectionCard(
+                    auditState = duplicateAudit,
+                    onVerifyClick = onVerifyDuplicateProductsClick,
+                    onOpenResultsClick = onOpenDuplicateAuditResultsClick,
+                )
         }
 
         if (analysis != null && analysis.conflictItems.isNotEmpty()) {
@@ -1010,7 +1042,7 @@ private fun AnalysisSummarySection(
 }
 
 @Composable
-private fun UpdateSystemGlassContainer(
+internal fun UpdateSystemGlassContainer(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {

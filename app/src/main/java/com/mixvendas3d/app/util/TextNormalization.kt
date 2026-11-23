@@ -14,6 +14,7 @@ import java.util.Locale
 object TextNormalization {
     private val PT_BR_LOCALE: Locale = Locale.forLanguageTag("pt-BR")
     private val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")
+    private val WHITESPACE_REGEX = Regex("\\s+")
 
     fun toRegistrationUppercase(value: String): String {
         if (value.isEmpty()) return value
@@ -24,6 +25,18 @@ object TextNormalization {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) return ""
         val decomposed = Normalizer.normalize(trimmed, Normalizer.Form.NFD)
+        return COMBINING_MARKS_REGEX.replace(decomposed, "").lowercase(PT_BR_LOCALE)
+    }
+
+    /**
+     * Normalização dedicada à comparação de duplicidade de produtos:
+     * remove espaços nas extremidades, colapsa múltiplos espaços internos em um único espaço,
+     * remove acentos/diacríticos e converte para minúsculas (pt-BR).
+     */
+    fun normalizeForDuplicateComparison(value: String): String {
+        val collapsed = value.trim().replace(WHITESPACE_REGEX, " ")
+        if (collapsed.isEmpty()) return ""
+        val decomposed = Normalizer.normalize(collapsed, Normalizer.Form.NFD)
         return COMBINING_MARKS_REGEX.replace(decomposed, "").lowercase(PT_BR_LOCALE)
     }
 }

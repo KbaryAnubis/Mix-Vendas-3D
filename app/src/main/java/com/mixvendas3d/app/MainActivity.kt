@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
         SystemUpdateViewModel.provideFactory(
             database = app.database,
             repository = app.systemUpdateRepository,
+            catalogRepository = app.catalogRepository,
         )
     }
 
