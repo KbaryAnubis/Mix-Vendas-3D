@@ -27,6 +27,7 @@ internal data class MappedSaleEntities(
 internal object SaleEntityMapper {
     private const val DISCOUNT_MODE_PROPORTIONAL = "PROPORTIONAL"
     private const val DISCOUNT_MODE_SPECIFIC_PRODUCT = "SPECIFIC_PRODUCT"
+    private const val DISCOUNT_MODE_SELECTED_PRODUCTS = "SELECTED_PRODUCTS"
 
     fun toEntities(
         saleId: String,
@@ -41,6 +42,11 @@ internal object SaleEntityMapper {
                 DISCOUNT_MODE_SPECIFIC_PRODUCT,
                 cfg.productId,
                 cfg.productNameSnapshot,
+            )
+            is SaleDiscountConfigSnapshot.SelectedProducts -> Triple(
+                DISCOUNT_MODE_SELECTED_PRODUCTS,
+                cfg.productIds.joinToString(","),
+                cfg.productNameSnapshots.joinToString(", "),
             )
         }
         val machine = result.machineSnapshot
@@ -166,6 +172,21 @@ internal object SaleEntityMapper {
                 productId = sale.discountTargetProductId.orEmpty(),
                 productNameSnapshot = sale.discountTargetProductName.orEmpty(),
             )
+            DISCOUNT_MODE_SELECTED_PRODUCTS -> {
+                val parsedIds = sale.discountTargetProductId
+                    .orEmpty()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                val itemNamesById = row.items.associate { it.item.productId to it.item.productName }
+                val parsedNames = parsedIds.map { id ->
+                    itemNamesById[id] ?: id
+                }
+                SaleDiscountConfigSnapshot.SelectedProducts(
+                    productIds = parsedIds,
+                    productNameSnapshots = parsedNames,
+                )
+            }
             else -> SaleDiscountConfigSnapshot.Proportional
         }
 

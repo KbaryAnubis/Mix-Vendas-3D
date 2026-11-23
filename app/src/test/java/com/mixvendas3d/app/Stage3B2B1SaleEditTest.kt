@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -259,8 +261,9 @@ class Stage3B2B1SaleEditTest {
         composeRule.onNodeWithTag("selected_inc_$prodBId").performScrollTo().assertExists()
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo()
             .assertTextContains("140,00")
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo()
-            .assertTextContains("Aplicar somente em Dragão Dourado", substring = true)
+        composeRule.onNodeWithTag("discount_products_box").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prodAId").performScrollTo().assertIsOn()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prodBId").performScrollTo().assertIsOff()
         composeRule.onNodeWithTag("sale_note_input").performScrollTo()
             .assertTextContains("Entrega sexta")
         composeRule.onNodeWithTag("machine_selector_dropdown").performScrollTo()
@@ -395,11 +398,11 @@ class Stage3B2B1SaleEditTest {
 
         // Muda desconto para específico em Vaso Prisma e altera valor final para 140,00 (desconto R$ 30 só em Vaso)
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("140,00")
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
         waitUiUntil {
-            composeRule.onAllNodesWithText("Aplicar somente em Vaso Prisma").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("discount_product_row_$prodCId").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Aplicar somente em Vaso Prisma").performClick()
+        composeRule.onNodeWithTag("discount_product_row_$prodCId").performScrollTo().performClick()
+        composeRule.waitForIdle()
 
         // Muda pagamento de Pix -> Crédito na Stone Smart, Mastercard (3,20%) + 2x (+1,00%) = 4,20%
         composeRule.onNodeWithTag("pay_method_credit").performScrollTo().performClick()
@@ -442,12 +445,8 @@ class Stage3B2B1SaleEditTest {
         // Muda pagamento de Crédito -> Dinheiro e altera valor final para 160,00 (desconto 10 proporcional)
         composeRule.onNodeWithTag("pay_method_cash").performScrollTo().performClick()
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("160,00")
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        waitUiUntil {
-            composeRule.onAllNodesWithText("Distribuir proporcionalmente entre os produtos")
-                .fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithText("Distribuir proporcionalmente entre os produtos").performClick()
+        composeRule.onNodeWithTag("discount_select_all_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
 
         waitUiUntil {
@@ -526,12 +525,9 @@ class Stage3B2B1SaleEditTest {
         composeRule.onNodeWithTag("vender_feedback_banner")
             .assertTextContains("removido", substring = true)
 
-        // Agora usuário escolhe explicitamente "Aplicar somente em Capa Celular" e salva com sucesso
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        waitUiUntil {
-            composeRule.onAllNodesWithText("Aplicar somente em Capa Celular").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithText("Aplicar somente em Capa Celular").performClick()
+        // Agora usuário escolhe explicitamente Capa Celular na caixa de produtos do desconto e salva com sucesso
+        composeRule.onNodeWithTag("discount_product_row_$prodAId").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
 
         waitUiUntil {

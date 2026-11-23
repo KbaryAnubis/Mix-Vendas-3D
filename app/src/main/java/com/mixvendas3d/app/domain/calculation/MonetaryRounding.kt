@@ -156,4 +156,73 @@ object MonetaryRounding {
 
         return baseAllocations
     }
+
+    /**
+     * Distribui exatamente [totalAmount] (>= 0) entre os [buckets] proporcionalmente aos respectivos
+     * pesos (>= 0), respeitando o teto individual [CappedWeightedAllocationBucket.maxAmount] de cada
+     * bucket por redistribuição iterativa (water-filling) determinística, sem perda ou sobra de centavos.
+     */
+    fun allocateByWeightsWithCapsDeterministic(
+        totalAmount: Long,
+        buckets: List<CappedWeightedAllocationBucket>,
+    ): Map<String, Long> {
+        require(totalAmount >= 0L) { "totalAmount não pode ser negativo." }
+        require(buckets.isNotEmpty()) { "Lista de alocação não pode ser vazia." }
+
+        val seenKeys = HashSet<String>(buckets.size)
+        var totalCapBig = BigInteger.ZERO
+        buckets.forEach { bucket ->
+            require(seenKeys.add(bucket.key)) { "Chave duplicada na alocação: ${bucket.key}" }
+            require(bucket.weight >= 0L) { "Peso negativo na alocação: ${bucket.key}" }
+            require(bucket.maxAmount >= 0L) { "Teto negativo na alocação: ${bucket.key}" }
+            totalCapBig = totalCapBig.add(BigInteger.valueOf(bucket.maxAmount))
+        }
+
+        val result = LinkedHashMap<String, Long>(buckets.size)
+        buckets.forEach { result[it.key] = 0L }
+
+        if (totalAmount == 0L) {
+            return result
+        }
+        require(totalCapBig >= BigInteger.valueOf(totalAmount)) {
+            "Capacidade total ($totalCapBig) insuficiente para alocar $totalAmount centavos."
+        }
+
+        var remaining = totalAmount
+        val active = buckets.filter { it.maxAmount > 0L && it.weight > 0L }.toMutableList()
+
+        while (remaining > 0L) {
+            require(active.isNotEmpty()) {
+                "Sem buckets ativos com peso positivo para alocar os $remaining centavos restantes."
+            }
+            val trial = allocateByWeightsDeterministic(
+                totalAmount = remaining,
+                buckets = active.map { WeightedAllocationBucket(key = it.key, weight = it.weight) },
+            )
+            val overflowed = active.filter { bucket ->
+                trial.getValue(bucket.key) > bucket.maxAmount
+            }
+            if (overflowed.isEmpty()) {
+                active.forEach { bucket ->
+                    result[bucket.key] = safeAdd(result.getValue(bucket.key), trial.getValue(bucket.key))
+                }
+                remaining = 0L
+            } else {
+                overflowed.forEach { bucket ->
+                    result[bucket.key] = bucket.maxAmount
+                    remaining = safeSubtract(remaining, bucket.maxAmount)
+                }
+                val overflowKeys = overflowed.mapTo(HashSet(overflowed.size)) { it.key }
+                active.removeAll { it.key in overflowKeys }
+            }
+        }
+
+        return result
+    }
 }
+
+data class CappedWeightedAllocationBucket(
+    val key: String,
+    val weight: Long,
+    val maxAmount: Long,
+)

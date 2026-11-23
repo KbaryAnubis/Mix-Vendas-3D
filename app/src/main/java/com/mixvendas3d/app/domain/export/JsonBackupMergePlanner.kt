@@ -2546,7 +2546,10 @@ object JsonBackupMergePlanner {
     ): String? {
         val method = SalePaymentMethod.fromStorageKey(sale.paymentMethod)
             ?: return "Forma de pagamento inválida na venda '${sale.id}': ${sale.paymentMethod}."
-        if (sale.discountMode != "PROPORTIONAL" && sale.discountMode != "SPECIFIC_PRODUCT") {
+        if (sale.discountMode != "PROPORTIONAL" &&
+            sale.discountMode != "SPECIFIC_PRODUCT" &&
+            sale.discountMode != "SELECTED_PRODUCTS"
+        ) {
             return "Modo de desconto inválido na venda '${sale.id}': ${sale.discountMode}."
         }
         if (sale.discountMode == "PROPORTIONAL" &&

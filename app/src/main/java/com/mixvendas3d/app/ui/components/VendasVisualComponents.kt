@@ -481,6 +481,8 @@ fun VendasSaleHeroCard(
                         val discountScopeLabel = when (val cfg = calc.discountConfig) {
                             is SaleDiscountConfigSnapshot.Proportional -> "Proporcional"
                             is SaleDiscountConfigSnapshot.SpecificProduct -> "Em ${cfg.productNameSnapshot}"
+                            is SaleDiscountConfigSnapshot.SelectedProducts ->
+                                "Em ${cfg.productIds.size} produtos (${cfg.productNameSnapshots.joinToString(", ")})"
                         }
                         VendasKeyValueRow(
                             label = "Desconto ($discountScopeLabel)",

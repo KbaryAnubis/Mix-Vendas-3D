@@ -84,6 +84,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mixvendas3d.app.R
 import com.mixvendas3d.app.domain.calculation.MonetaryRounding
+import com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
 import com.mixvendas3d.app.domain.calculation.SaleFinancialEngine
 import com.mixvendas3d.app.domain.models.CardBrand
 import com.mixvendas3d.app.domain.models.Machine
@@ -92,12 +93,15 @@ import com.mixvendas3d.app.domain.models.PreviewPaymentMethod
 import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
+import com.mixvendas3d.app.ui.components.DiscountProductsSelectionBox
+import com.mixvendas3d.app.ui.components.DiscountProtectedPeopleBox
 import com.mixvendas3d.app.ui.components.PickerCategoryHeader
 import com.mixvendas3d.app.ui.components.PickerSubcategoryHeader
 import com.mixvendas3d.app.ui.components.Mv3dIcon
 import com.mixvendas3d.app.ui.components.VenderAutoSplitSectionCard
 import com.mixvendas3d.app.ui.components.VenderChooseProductsButton
 import com.mixvendas3d.app.ui.components.VenderDashedEmptyCard
+import com.mixvendas3d.app.ui.components.VenderDiscountPreviewCard
 import com.mixvendas3d.app.ui.components.VenderGlassCard
 import com.mixvendas3d.app.ui.components.VenderMachinePickerRow
 import com.mixvendas3d.app.ui.components.VenderPaymentMethodTile
@@ -174,6 +178,11 @@ fun VenderScreen(
     },
     onCustomSaleDateToggled: (Boolean) -> Unit = {},
     onSaleDateSelected: (LocalDate) -> Unit = {},
+    onToggleDiscountProduct: (String) -> Unit = {},
+    onSelectAllDiscountProducts: () -> Unit = {},
+    onClearDiscountProducts: () -> Unit = {},
+    onToggleProtectedDiscountPerson: (String) -> Unit = {},
+    onAuthorizeUnprotectFixedPerson: (String) -> Unit = {},
 ) {
     val form = uiState.venderForm
     var saleDatePickerOpen by rememberSaveable { mutableStateOf(false) }
@@ -222,6 +231,37 @@ fun VenderScreen(
 
     val totalSelectedQty = selectedEntries.sumOf { it.second }
     val summaryTotalCents = if (finalAmountError == null) effectiveFinalCents else subtotalCents
+
+    val effectiveDiscountSelectedProductIds = form.effectiveDiscountSelectedProductIds()
+    val selectedDiscountEntries = remember(selectedEntries, effectiveDiscountSelectedProductIds) {
+        selectedEntries.filter { it.first.id in effectiveDiscountSelectedProductIds }
+    }
+    val selectableDiscountPeople = remember(
+        selectedDiscountEntries,
+        form.discountProtectedPersonIds,
+        form.discountUnprotectedFixedPersonIds,
+    ) {
+        SaleDiscountPolicy.buildSelectablePeopleForDiscount(
+            selectedDiscountEntries = selectedDiscountEntries,
+            protectedPersonIds = form.discountProtectedPersonIds,
+            unprotectedFixedPersonIds = form.discountUnprotectedFixedPersonIds,
+        )
+    }
+    val discountPreview = remember(
+        form,
+        uiState.activeCatalogProducts,
+        uiState.machines,
+    ) {
+        if (selectedEntries.isNotEmpty() && (showDiscountOptions || form.isDiscountTargetMissing)) {
+            MixVendasShellViewModel.buildDiscountPreview(
+                form = form,
+                activeProducts = uiState.activeCatalogProducts,
+                machines = uiState.machines,
+            )
+        } else {
+            null
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -529,26 +569,20 @@ fun VenderScreen(
 
                     if (showDiscountOptions || form.isDiscountTargetMissing) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        val targetEntry = selectedEntries.firstOrNull { it.first.id == form.discountTargetProductId }
-                        val targetLineSubtotal = targetEntry?.let {
-                            MonetaryRounding.safeMultiplyOrNull(it.first.price.rawCents, it.second)
-                        }
-                        val targetExceededError = if (
-                            showDiscountOptions &&
-                            targetEntry != null &&
-                            targetLineSubtotal != null &&
-                            discountCents >= targetLineSubtotal
-                        ) {
-                            "O desconto (${CurrencyFormatter.formatBrl(MoneyCents(discountCents))}) não pode zerar ou superar o valor de ${targetEntry.first.name}."
-                        } else {
-                            null
-                        }
-                        DiscountTargetSelector(
-                            selectedTarget = form.discountTargetProductId,
-                            selectedProducts = selectedEntries.map { it.first },
+                        DiscountProductsSelectionBox(
+                            selectedEntries = selectedEntries,
+                            selectedDiscountProductIds = effectiveDiscountSelectedProductIds,
+                            discountCents = discountCents,
                             targetMissing = form.isDiscountTargetMissing,
-                            targetAmountError = targetExceededError,
-                            onSelectTarget = onDiscountTargetSelected,
+                            onToggleProduct = onToggleDiscountProduct,
+                            onSelectAll = onSelectAllDiscountProducts,
+                            onClearAll = onClearDiscountProducts,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        DiscountProtectedPeopleBox(
+                            selectablePeople = selectableDiscountPeople,
+                            onToggleProtectedPerson = onToggleProtectedDiscountPerson,
+                            onAuthorizeUnprotectFixedPerson = onAuthorizeUnprotectFixedPerson,
                         )
                     }
                 }
@@ -676,11 +710,20 @@ fun VenderScreen(
                     VenderSectionHeading(text = stringResource(R.string.sell_step_split))
 
                     val discountTargetLabel = if (discountCents > 0L) {
-                        if (form.discountTargetProductId == VenderFormUiState.DISCOUNT_PROPORTIONAL) {
-                            "distribuído proporcionalmente entre os produtos"
+                        val protectedSuffix = if (form.discountProtectedPersonIds.isNotEmpty()) {
+                            " (${form.discountProtectedPersonIds.size} pessoa(s) protegida(s))"
                         } else {
-                            selectedEntries.firstOrNull { it.first.id == form.discountTargetProductId }
-                                ?.first?.name?.let { "aplicado somente em $it" }
+                            ""
+                        }
+                        val matchedProducts = selectedEntries.filter { it.first.id in effectiveDiscountSelectedProductIds }
+                        when {
+                            matchedProducts.isEmpty() -> "nenhum produto selecionado"
+                            matchedProducts.size == selectedEntries.size ->
+                                "distribuído proporcionalmente entre todos os produtos$protectedSuffix"
+                            matchedProducts.size == 1 ->
+                                "aplicado somente em ${matchedProducts.first().first.name}$protectedSuffix"
+                            else ->
+                                "aplicado em ${matchedProducts.size} produtos (${matchedProducts.joinToString(", ") { it.first.name }})$protectedSuffix"
                         }
                     } else {
                         null
@@ -690,6 +733,12 @@ fun VenderScreen(
                         discountCents = discountCents,
                         discountTargetLabel = discountTargetLabel,
                     )
+
+                    if (discountPreview != null) {
+                        VenderDiscountPreviewCard(
+                            preview = discountPreview,
+                        )
+                    }
                 }
 
                 // Feedback e botão principal
@@ -1262,127 +1311,6 @@ private fun SelectedSaleItemRow(
     }
 }
 
-@Composable
-private fun DiscountTargetSelector(
-    selectedTarget: String,
-    selectedProducts: List<Product>,
-    targetMissing: Boolean = false,
-    targetAmountError: String? = null,
-    onSelectTarget: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = when {
-        targetMissing -> "Produto do desconto removido — escolha como aplicar"
-        selectedTarget == VenderFormUiState.DISCOUNT_PROPORTIONAL -> stringResource(R.string.sell_discount_prop)
-        else -> {
-            val productName = selectedProducts.firstOrNull { it.id == selectedTarget }?.name
-            if (productName != null) {
-                "Aplicar somente em $productName"
-            } else {
-                stringResource(R.string.sell_discount_prop)
-            }
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = stringResource(R.string.sell_discount_target_label),
-            fontFamily = PlusJakartaSansFontFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            color = Color.White,
-        )
-        Box {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable { expanded = true }
-                    .testTag("discount_target_dropdown"),
-                shape = RoundedCornerShape(14.dp),
-                color = GlassInnerBoxBg,
-                border = BorderStroke(
-                    width = if (targetMissing || targetAmountError != null) 1.5.dp else 1.dp,
-                    color = if (targetMissing || targetAmountError != null) {
-                        V19ErrorSoft
-                    } else {
-                        GlassNeonBorder15
-                    },
-                ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = selectedLabel,
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Icon(
-                        imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = V19PurpleSoftText,
-                    )
-                }
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                containerColor = V19SurfaceCard,
-            ) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = stringResource(R.string.sell_discount_prop),
-                            color = V19InkPrimary,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelectTarget(VenderFormUiState.DISCOUNT_PROPORTIONAL)
-                    },
-                )
-                selectedProducts.forEach { product ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = "Aplicar somente em ${product.name}",
-                                color = V19InkPrimary,
-                            )
-                        },
-                        onClick = {
-                            expanded = false
-                            onSelectTarget(product.id)
-                        },
-                    )
-                }
-            }
-        }
-        if (targetMissing) {
-            Text(
-                text = "O produto que recebia o desconto foi removido. Selecione proporcional ou outro produto.",
-                fontFamily = PlusJakartaSansFontFamily,
-                fontSize = 12.sp,
-                color = V19ErrorSoft,
-                modifier = Modifier.testTag("discount_target_missing_warning"),
-            )
-        } else if (targetAmountError != null) {
-            Text(
-                text = targetAmountError,
-                fontFamily = PlusJakartaSansFontFamily,
-                fontSize = 12.sp,
-                color = V19ErrorSoft,
-                modifier = Modifier.testTag("discount_target_amount_warning"),
-            )
-        }
-    }
-}
 
 @Composable
 private fun PaymentMethodGrid(

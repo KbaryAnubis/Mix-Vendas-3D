@@ -173,6 +173,11 @@ object CsvSaleExporter {
                     cfg.productId,
                     cfg.productNameSnapshot,
                 )
+                is SaleDiscountConfigSnapshot.SelectedProducts -> Triple(
+                    "Produtos selecionados",
+                    cfg.productIds.joinToString(","),
+                    cfg.productNameSnapshots.joinToString(", "),
+                )
             }
 
             calc.items.forEachIndexed { itemIndex, item ->

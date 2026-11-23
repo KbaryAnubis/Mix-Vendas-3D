@@ -330,10 +330,8 @@ class Wave2RegressionTest {
         // 3. Digitar novo valor com desconto (90,00) calcula desconto de R$ 10,00 e permite escolher alvo do desconto
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextInput("90,00")
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("discount_target_dropdown").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("Aplicar somente em Suporte Controle").performClick()
+        composeRule.onNodeWithTag("discount_products_box").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_product_row_$prodAId").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         // 4. Alterar quantidade de um produto mantém recálculo coerente (preserva desconto de R$ 10,00)

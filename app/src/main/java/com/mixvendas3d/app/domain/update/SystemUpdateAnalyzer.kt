@@ -146,6 +146,11 @@ object SystemUpdateAnalyzer {
                 is SaleDiscountConfigSnapshot.Proportional -> append("|DP")
                 is SaleDiscountConfigSnapshot.SpecificProduct ->
                     append("|DS:").append(d.productId).append(':').append(d.productNameSnapshot)
+                is SaleDiscountConfigSnapshot.SelectedProducts ->
+                    append("|DM:")
+                        .append(d.productIds.sorted().joinToString(","))
+                        .append(':')
+                        .append(d.productNameSnapshots.joinToString(","))
             }
             calc.machineSnapshot?.let { m ->
                 append("|MS:").append(m.machineId)
@@ -254,7 +259,10 @@ object SystemUpdateAnalyzer {
         val discountMode = when (val cfg = oldCalc.discountConfig) {
             is SaleDiscountConfigSnapshot.Proportional -> SaleDiscountInput.Proportional
             is SaleDiscountConfigSnapshot.SpecificProduct -> SaleDiscountInput.SpecificProduct(cfg.productId)
+            is SaleDiscountConfigSnapshot.SelectedProducts -> SaleDiscountInput.SelectedProducts(cfg.productIds.toSet())
         }
+        val protectedDiscountPersonIds = com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
+            .inferProtectedPersonIdsFromSnapshot(oldCalc)
 
         val calcInput = SaleCalculationInput(
             items = resolvedItemInputs,
@@ -267,6 +275,7 @@ object SystemUpdateAnalyzer {
             manualRateOverrideBps = resolvedMachineResult.manualRateOverrideBps,
             note = oldCalc.note,
             cardBrandKey = resolvedMachineResult.cardBrandKey,
+            protectedDiscountPersonIds = protectedDiscountPersonIds,
         )
 
         val proposedCalc = try {

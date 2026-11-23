@@ -22,6 +22,7 @@ enum class SalePaymentMethod(
 sealed interface SaleDiscountInput {
     data object Proportional : SaleDiscountInput
     data class SpecificProduct(val productId: String) : SaleDiscountInput
+    data class SelectedProducts(val productIds: Set<String>) : SaleDiscountInput
 }
 
 sealed interface SaleDiscountConfigSnapshot {
@@ -29,6 +30,10 @@ sealed interface SaleDiscountConfigSnapshot {
     data class SpecificProduct(
         val productId: String,
         val productNameSnapshot: String,
+    ) : SaleDiscountConfigSnapshot
+    data class SelectedProducts(
+        val productIds: List<String>,
+        val productNameSnapshots: List<String>,
     ) : SaleDiscountConfigSnapshot
 }
 
@@ -48,6 +53,7 @@ data class SaleCalculationInput(
     val manualRateOverrideBps: Int? = null,
     val note: String = "",
     val cardBrandKey: String? = null,
+    val protectedDiscountPersonIds: Set<String> = emptySet(),
 ) {
     fun resolvedCardBrandKey(): String? = cardBrandKey ?: cardBrand?.storageKey
 }
@@ -168,12 +174,16 @@ data class PersistedSale(
         overrideManualRateOverrideBps: Int? = calculation.machineSnapshot?.manualRateOverrideBps,
         overrideNote: String? = null,
         overrideCardBrandKey: String? = null,
+        overrideProtectedDiscountPersonIds: Set<String>? = null,
     ): SaleCalculationInput {
         val resolvedMethod = overridePaymentMethod ?: calculation.paymentMethod
         val resolvedDiscountMode = overrideDiscountMode ?: when (val config = calculation.discountConfig) {
             is SaleDiscountConfigSnapshot.Proportional -> SaleDiscountInput.Proportional
             is SaleDiscountConfigSnapshot.SpecificProduct -> SaleDiscountInput.SpecificProduct(config.productId)
+            is SaleDiscountConfigSnapshot.SelectedProducts -> SaleDiscountInput.SelectedProducts(config.productIds.toSet())
         }
+        val resolvedProtectedIds = overrideProtectedDiscountPersonIds
+            ?: com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(calculation)
         val resolvedMachine = if (resolvedMethod.usesMachine) {
             overrideMachine ?: calculation.machineSnapshot?.toSnapshotMachine(
                 paymentMethod = resolvedMethod,
@@ -203,6 +213,7 @@ data class PersistedSale(
             manualRateOverrideBps = overrideManualRateOverrideBps,
             note = overrideNote ?: calculation.note,
             cardBrandKey = resolvedBrandKey,
+            protectedDiscountPersonIds = resolvedProtectedIds,
         )
     }
 }

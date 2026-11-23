@@ -403,6 +403,30 @@ object SalePersistenceValidator {
                     }
                 }
             }
+            is SaleDiscountConfigSnapshot.SelectedProducts -> {
+                if (config.productIds.isEmpty() || config.productIds.any { it.isBlank() }) {
+                    throw SalePersistenceException("Desconto em produtos selecionados exige ao menos um produto válido.")
+                }
+                val targetSet = config.productIds.toSet()
+                if (targetSet.size != config.productIds.size) {
+                    throw SalePersistenceException("Lista de produtos selecionados para desconto contém IDs duplicados.")
+                }
+                val itemIds = result.items.mapTo(HashSet(result.items.size)) { it.productId }
+                if (!itemIds.containsAll(targetSet)) {
+                    throw SalePersistenceException("Um ou mais produtos selecionados para desconto não pertencem aos itens da venda.")
+                }
+                var selectedDiscountSum = 0L
+                result.items.forEach { item ->
+                    if (item.productId in targetSet) {
+                        selectedDiscountSum = MonetaryRounding.safeAdd(selectedDiscountSum, item.discountAmount.rawCents)
+                    } else if (item.discountAmount.rawCents != 0L) {
+                        throw SalePersistenceException("Produto não selecionado recebeu desconto indevidamente (${item.productName}).")
+                    }
+                }
+                if (selectedDiscountSum != result.discountTotal.rawCents) {
+                    throw SalePersistenceException("Soma dos descontos nos produtos selecionados difere do desconto total da venda.")
+                }
+            }
         }
     }
 

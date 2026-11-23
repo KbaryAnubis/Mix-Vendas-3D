@@ -11,9 +11,11 @@ import com.mixvendas3d.app.data.repository.PreferenceRepository
 import com.mixvendas3d.app.data.repository.SaleRepository
 import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.calculation.SaleCalculationException
+import com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
 import com.mixvendas3d.app.domain.calculation.SaleFinancialEngine
 import com.mixvendas3d.app.domain.calculation.SalePersistenceException
 import com.mixvendas3d.app.domain.calculation.SalePersistenceValidator
+import com.mixvendas3d.app.domain.calculation.VenderDiscountPreview
 import com.mixvendas3d.app.domain.export.CsvExportPeriod
 import com.mixvendas3d.app.domain.export.CsvExportResult
 import com.mixvendas3d.app.domain.export.CsvExportValidationException
@@ -131,6 +133,11 @@ data class VenderFormUiState(
     val finalAmountInput: String = "",
     val finalAmountTouched: Boolean = false,
     val discountTargetProductId: String = DISCOUNT_PROPORTIONAL,
+    val discountSelectedProductIds: Set<String> = emptySet(),
+    val discountSelectionCustomized: Boolean = false,
+    val discountMissingProductIds: Set<String> = emptySet(),
+    val discountProtectedPersonIds: Set<String> = emptySet(),
+    val discountUnprotectedFixedPersonIds: Set<String> = emptySet(),
     val selectedMethod: PreviewPaymentMethod = PreviewPaymentMethod.PIX,
     val selectedMachineId: String? = null,
     val machinePickerOpen: Boolean = false,
@@ -154,8 +161,20 @@ data class VenderFormUiState(
         get() = editingSaleId != null
 
     val isDiscountTargetMissing: Boolean
-        get() = discountTargetProductId != DISCOUNT_PROPORTIONAL &&
-            (selectedQuantities[discountTargetProductId] ?: 0) <= 0
+        get() = discountMissingProductIds.isNotEmpty() ||
+            (discountTargetProductId != DISCOUNT_PROPORTIONAL &&
+                discountSelectedProductIds.isEmpty() &&
+                (selectedQuantities[discountTargetProductId] ?: 0) <= 0)
+
+    fun effectiveDiscountSelectedProductIds(): Set<String> {
+        val activeIds = selectedQuantities.filterValues { it > 0 }.keys
+        if (activeIds.isEmpty()) return emptySet()
+        return if (discountSelectionCustomized) {
+            discountSelectedProductIds.intersect(activeIds)
+        } else {
+            activeIds
+        }
+    }
 
     fun resolvedBrandKey(): String = selectedBrandKey.ifBlank { selectedBrand.storageKey }
 
@@ -907,11 +926,25 @@ class MixVendasShellViewModel(
                 )
             }
             val quantities = calc.items.associate { it.productId to it.quantity }
+            val selectedDiscountIds = SaleDiscountPolicy.selectedProductIdsFromSnapshot(calc)
+            val discountCustomized = calc.discountConfig !is SaleDiscountConfigSnapshot.Proportional
             val discountTarget = when (val cfg = calc.discountConfig) {
                 is SaleDiscountConfigSnapshot.Proportional -> VenderFormUiState.DISCOUNT_PROPORTIONAL
                 is SaleDiscountConfigSnapshot.SpecificProduct -> cfg.productId
+                is SaleDiscountConfigSnapshot.SelectedProducts -> VenderFormUiState.DISCOUNT_PROPORTIONAL
             }
             val hasDiscount = calc.finalAmount.rawCents < calc.originalSubtotal.rawCents
+            val inferredProtectedIds = SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(
+                calc = calc,
+                selectedDiscountProductIds = selectedDiscountIds,
+            )
+            val selectedDiscountProducts = selectedDiscountIds.mapNotNull { historicalProducts[it] }
+            val fixedPeopleInSelected = SaleDiscountPolicy.detectFixedUnitSharePersonIds(selectedDiscountProducts)
+            val unprotectedFixedIds = if (hasDiscount) {
+                fixedPeopleInSelected - inferredProtectedIds
+            } else {
+                emptySet()
+            }
             val snap = calc.machineSnapshot
 
             val resolvedEditBrandKey = snap?.resolvedAppliedBrandKey ?: CardBrand.VISA.storageKey
@@ -930,6 +963,11 @@ class MixVendasShellViewModel(
                 finalAmountInput = CurrencyFormatter.formatCentsForInput(calc.finalAmount.rawCents),
                 finalAmountTouched = hasDiscount,
                 discountTargetProductId = discountTarget,
+                discountSelectedProductIds = selectedDiscountIds,
+                discountSelectionCustomized = discountCustomized,
+                discountMissingProductIds = emptySet(),
+                discountProtectedPersonIds = inferredProtectedIds,
+                discountUnprotectedFixedPersonIds = unprotectedFixedIds,
                 selectedMethod = calc.paymentMethod.toPreviewPaymentMethod(),
                 selectedMachineId = snap?.machineId,
                 machinePickerOpen = false,
@@ -1091,25 +1129,147 @@ class MixVendasShellViewModel(
 
     fun onFinalAmountInputChanged(value: String) {
         val current = venderFormFlow.value
-        val targetMissingNow = current.discountTargetProductId != VenderFormUiState.DISCOUNT_PROPORTIONAL &&
-            !current.selectedQuantities.containsKey(current.discountTargetProductId)
-        venderFormFlow.value = current.copy(
-            finalAmountInput = value,
-            finalAmountTouched = true,
-            recalculatedNotice = if (targetMissingNow) current.recalculatedNotice else null,
-            recalculatedNoticeIsError = if (targetMissingNow) current.recalculatedNoticeIsError else false,
-            feedbackMessage = null,
-            feedbackIsError = false,
+        val targetMissingNow = current.isDiscountTargetMissing
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                finalAmountInput = value,
+                finalAmountTouched = true,
+                recalculatedNotice = if (targetMissingNow) current.recalculatedNotice else null,
+                recalculatedNoticeIsError = if (targetMissingNow) current.recalculatedNoticeIsError else false,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
         )
     }
 
     fun onDiscountTargetSelected(targetProductId: String) {
-        venderFormFlow.value = venderFormFlow.value.copy(
-            discountTargetProductId = targetProductId,
-            recalculatedNotice = null,
-            recalculatedNoticeIsError = false,
-            feedbackMessage = null,
-            feedbackIsError = false,
+        if (targetProductId == VenderFormUiState.DISCOUNT_PROPORTIONAL) {
+            onSelectAllDiscountProducts()
+        } else {
+            val current = venderFormFlow.value
+            val validIds = if (current.selectedQuantities.containsKey(targetProductId)) {
+                setOf(targetProductId)
+            } else {
+                emptySet()
+            }
+            venderFormFlow.value = syncForm(
+                form = current.copy(
+                    discountTargetProductId = targetProductId,
+                    discountSelectedProductIds = validIds,
+                    discountSelectionCustomized = true,
+                    discountMissingProductIds = emptySet(),
+                    recalculatedNotice = null,
+                    recalculatedNoticeIsError = false,
+                    feedbackMessage = null,
+                    feedbackIsError = false,
+                ),
+                activeProducts = latestActiveProducts,
+                machines = latestMachines,
+            )
+        }
+    }
+
+    fun onToggleDiscountProduct(productId: String) {
+        val current = venderFormFlow.value
+        val activeIds = current.selectedQuantities.filterValues { it > 0 }.keys
+        if (productId !in activeIds) return
+        val currentEffective = current.effectiveDiscountSelectedProductIds()
+        val updated = if (productId in currentEffective) {
+            currentEffective - productId
+        } else {
+            currentEffective + productId
+        }
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountSelectedProductIds = updated,
+                discountSelectionCustomized = true,
+                discountMissingProductIds = emptySet(),
+                recalculatedNotice = null,
+                recalculatedNoticeIsError = false,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
+        )
+    }
+
+    fun onSelectAllDiscountProducts() {
+        val current = venderFormFlow.value
+        val activeIds = current.selectedQuantities.filterValues { it > 0 }.keys
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountTargetProductId = VenderFormUiState.DISCOUNT_PROPORTIONAL,
+                discountSelectedProductIds = activeIds,
+                discountSelectionCustomized = false,
+                discountMissingProductIds = emptySet(),
+                recalculatedNotice = null,
+                recalculatedNoticeIsError = false,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
+        )
+    }
+
+    fun onClearDiscountProducts() {
+        val current = venderFormFlow.value
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountSelectedProductIds = emptySet(),
+                discountSelectionCustomized = true,
+                discountMissingProductIds = emptySet(),
+                discountProtectedPersonIds = emptySet(),
+                discountUnprotectedFixedPersonIds = emptySet(),
+                recalculatedNotice = null,
+                recalculatedNoticeIsError = false,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
+        )
+    }
+
+    fun onToggleProtectedDiscountPerson(personId: String) {
+        val current = venderFormFlow.value
+        val isCurrentlyProtected = personId in current.discountProtectedPersonIds
+        val updatedProtected = if (isCurrentlyProtected) {
+            current.discountProtectedPersonIds - personId
+        } else {
+            current.discountProtectedPersonIds + personId
+        }
+        val updatedUnprotectedFixed = if (isCurrentlyProtected) {
+            current.discountUnprotectedFixedPersonIds + personId
+        } else {
+            current.discountUnprotectedFixedPersonIds - personId
+        }
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountProtectedPersonIds = updatedProtected,
+                discountUnprotectedFixedPersonIds = updatedUnprotectedFixed,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
+        )
+    }
+
+    fun onAuthorizeUnprotectFixedPerson(personId: String) {
+        val current = venderFormFlow.value
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountProtectedPersonIds = current.discountProtectedPersonIds - personId,
+                discountUnprotectedFixedPersonIds = current.discountUnprotectedFixedPersonIds + personId,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
         )
     }
 
@@ -1398,21 +1558,45 @@ class MixVendasShellViewModel(
             nextFinalTouched = current.finalAmountTouched
         }
 
-        val specificTargetMissing = current.discountTargetProductId != VenderFormUiState.DISCOUNT_PROPORTIONAL &&
-            !cleanQuantities.containsKey(current.discountTargetProductId)
-
-        val nextDiscountTarget = if (cleanQuantities.isEmpty()) {
-            VenderFormUiState.DISCOUNT_PROPORTIONAL
-        } else if (specificTargetMissing && prevDiscountCents == 0L && (!current.finalAmountTouched || prevParsedFinal == prevSubtotalCents)) {
-            VenderFormUiState.DISCOUNT_PROPORTIONAL
+        val prevSelectedTargets = current.effectiveDiscountSelectedProductIds()
+        val removedFromSelectedTargets = if (current.discountSelectionCustomized) {
+            prevSelectedTargets.filterNot { cleanQuantities.containsKey(it) }.toSet()
         } else {
-            current.discountTargetProductId
+            emptySet()
+        }
+        val remainingSelectedTargets = if (current.discountSelectionCustomized) {
+            prevSelectedTargets.intersect(cleanQuantities.keys)
+        } else {
+            cleanQuantities.keys
         }
 
-        if (cleanQuantities.isNotEmpty() && specificTargetMissing && nextDiscountTarget != VenderFormUiState.DISCOUNT_PROPORTIONAL) {
-            val missingName = resolvedProducts[nextDiscountTarget]?.name ?: "produto removido"
-            val targetMsg = "O produto \"$missingName\" que recebia o desconto específico foi removido. " +
-                "Escolha outro produto ou selecione desconto proporcional."
+        val hadExplicitTargetWipedOut = cleanQuantities.isNotEmpty() &&
+            current.discountSelectionCustomized &&
+            removedFromSelectedTargets.isNotEmpty() &&
+            remainingSelectedTargets.isEmpty() &&
+            (prevDiscountCents > 0L || current.finalAmountTouched)
+
+        val nextMissingIds = if (hadExplicitTargetWipedOut) {
+            removedFromSelectedTargets
+        } else if (cleanQuantities.isEmpty()) {
+            emptySet()
+        } else {
+            current.discountMissingProductIds
+        }
+
+        val nextCustomized = if (cleanQuantities.isEmpty()) {
+            false
+        } else if (!hadExplicitTargetWipedOut && removedFromSelectedTargets.isNotEmpty() && remainingSelectedTargets.isEmpty()) {
+            false
+        } else {
+            current.discountSelectionCustomized
+        }
+
+        if (hadExplicitTargetWipedOut) {
+            val missingName = removedFromSelectedTargets.firstOrNull()?.let { resolvedProducts[it]?.name }
+                ?: "produto removido"
+            val targetMsg = "O produto \"$missingName\" que recebia o desconto foi removido. " +
+                "Selecione quais produtos devem receber o desconto antes de salvar."
             notice = if (notice != null && noticeIsError) "$notice $targetMsg" else targetMsg
             noticeIsError = true
         }
@@ -1422,7 +1606,9 @@ class MixVendasShellViewModel(
                 selectedQuantities = cleanQuantities,
                 finalAmountInput = nextFinalInput,
                 finalAmountTouched = nextFinalTouched,
-                discountTargetProductId = nextDiscountTarget,
+                discountSelectedProductIds = if (nextCustomized) remainingSelectedTargets else cleanQuantities.keys,
+                discountSelectionCustomized = nextCustomized,
+                discountMissingProductIds = nextMissingIds,
                 recalculatedNotice = notice,
                 recalculatedNoticeIsError = noticeIsError,
                 feedbackMessage = null,
@@ -1447,14 +1633,14 @@ class MixVendasShellViewModel(
 
         val hasDiscount = parsedFinal < calc.originalSubtotal.rawCents
         if (hasDiscount) {
-            when (val cfg = calc.discountConfig) {
-                is SaleDiscountConfigSnapshot.Proportional -> {
-                    if (form.discountTargetProductId != VenderFormUiState.DISCOUNT_PROPORTIONAL) return false
-                }
-                is SaleDiscountConfigSnapshot.SpecificProduct -> {
-                    if (form.discountTargetProductId != cfg.productId) return false
-                }
-            }
+            if (form.isDiscountTargetMissing) return false
+            val originalTargetIds = SaleDiscountPolicy.selectedProductIdsFromSnapshot(calc)
+            if (form.effectiveDiscountSelectedProductIds() != originalTargetIds) return false
+            val originalProtectedIds = SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(
+                calc = calc,
+                selectedDiscountProductIds = originalTargetIds,
+            )
+            if (form.discountProtectedPersonIds != originalProtectedIds) return false
         }
 
         if (form.selectedMethod.toSalePaymentMethod() != calc.paymentMethod) return false
@@ -1480,148 +1666,6 @@ class MixVendasShellViewModel(
             }
         }
         return true
-    }
-
-    private fun buildCalculationInputFromForm(
-        form: VenderFormUiState,
-        activeProducts: List<Product>,
-        machines: List<Machine>,
-    ): SaleCalculationInput {
-        val productMap = resolvedProductsMap(form, activeProducts)
-        val itemInputs = form.selectedQuantities.entries
-            .filter { it.value > 0 }
-            .map { (productId, qty) ->
-                val product = productMap[productId]
-                    ?: throw SaleCalculationException("Um produto selecionado não está mais ativo no cadastro. Revise os itens.")
-                SaleItemInput(
-                    product = product,
-                    quantity = qty,
-                )
-            }
-        if (itemInputs.isEmpty()) {
-            throw SaleCalculationException("Selecione pelo menos um produto antes de salvar a venda.")
-        }
-
-        var originalSubtotalCents = 0L
-        itemInputs.forEach { line ->
-            val lineTotal = MonetaryRounding.safeMultiply(line.product.price.rawCents, line.quantity)
-            originalSubtotalCents = MonetaryRounding.safeAdd(originalSubtotalCents, lineTotal)
-        }
-
-        val finalAmountOverride: MoneyCents = if (form.finalAmountInput.isBlank()) {
-            throw SaleCalculationException("Informe o valor final da venda.")
-        } else {
-            val parsedCents = CurrencyFormatter.parseBrlToCents(form.finalAmountInput)
-                ?: throw SaleCalculationException("Valor final da venda inválido. Informe um valor em reais (ex.: 95,00).")
-            if (parsedCents <= 0L) {
-                throw SaleCalculationException("O valor final da venda deve ser maior que zero.")
-            }
-            if (parsedCents > originalSubtotalCents) {
-                throw SaleCalculationException(
-                    "O valor final (${CurrencyFormatter.formatBrl(MoneyCents(parsedCents))}) não pode ultrapassar o subtotal original (${CurrencyFormatter.formatBrl(MoneyCents(originalSubtotalCents))}).",
-                )
-            }
-            MoneyCents(parsedCents)
-        }
-
-        val effectiveFinalCents = finalAmountOverride.rawCents
-        val hasDiscount = effectiveFinalCents < originalSubtotalCents
-        val discountMode = if (
-            hasDiscount &&
-            form.discountTargetProductId != VenderFormUiState.DISCOUNT_PROPORTIONAL
-        ) {
-            val targetId = form.discountTargetProductId
-            if (itemInputs.none { it.product.id == targetId }) {
-                throw SaleCalculationException(
-                    "O produto que recebia o desconto específico foi removido. Escolha outro produto ou selecione desconto proporcional antes de salvar.",
-                )
-            }
-            SaleDiscountInput.SpecificProduct(targetId)
-        } else {
-            SaleDiscountInput.Proportional
-        }
-
-        val paymentMethod = form.selectedMethod.toSalePaymentMethod()
-        val selectedMachine = if (paymentMethod.usesMachine) {
-            val machineId = form.selectedMachineId
-                ?: throw SaleCalculationException(
-                    "Selecione uma maquininha compatível para pagamentos em ${paymentMethod.label}.",
-                )
-            if (canUseHistoricalMachineSnapshot(form)) {
-                val orig = form.originalEditingSale
-                form.historicalMachineSnapshot!!.toSnapshotMachine(
-                    paymentMethod = paymentMethod,
-                    soldAtEpochMs = orig?.soldAtEpochMs ?: 0L,
-                    updatedAtEpochMs = orig?.updatedAtEpochMs ?: 0L,
-                )
-            } else {
-                val machine = machines.firstOrNull { it.id == machineId }
-                    ?: throw SaleCalculationException("A maquininha selecionada não foi encontrada no cadastro.")
-                if (paymentMethod == SalePaymentMethod.CREDIT && !machine.creditEnabled) {
-                    throw SaleCalculationException("A maquininha \"${machine.name}\" não possui crédito ativado.")
-                }
-                machine
-            }
-        } else {
-            null
-        }
-
-        val manualRateOverrideBps = if (paymentMethod.usesMachine && form.feeOverrideEnabled) {
-            if (form.manualRateInput.isBlank()) {
-                throw SaleCalculationException("Informe a tarifa manual (%) ou desmarque a substituição de tarifa.")
-            }
-            val parsedBps = RateFormatter.parsePercentageToBps(form.manualRateInput)
-                ?: throw SaleCalculationException("Tarifa manual inválida. Use até 2 casas decimais (ex.: 3,50).")
-            if (parsedBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
-                throw SaleCalculationException("A tarifa manual deve estar entre 0,00% e 100,00%.")
-            }
-            parsedBps
-        } else {
-            null
-        }
-
-        val cardBrandKey = if (paymentMethod.usesMachine && selectedMachine?.brandRatesEnabled == true) {
-            if (
-                paymentMethod == SalePaymentMethod.DEBIT &&
-                canUseHistoricalMachineSnapshot(form) &&
-                form.historicalMachineSnapshot?.resolvedAppliedBrandKey == null &&
-                form.resolvedBrandKey() == CardBrand.VISA.storageKey
-            ) {
-                null
-            } else {
-                form.resolvedBrandKey()
-            }
-        } else {
-            null
-        }
-        val cardBrand = cardBrandKey?.let { CardBrand.fromStorageKey(it) }
-        val installments = if (paymentMethod == SalePaymentMethod.CREDIT) {
-            if (selectedMachine?.installmentsEnabled == true) {
-                if (!canUseHistoricalMachineSnapshot(form) && !selectedMachine.isInstallmentAllowed(form.selectedInstallments)) {
-                    throw SaleCalculationException(
-                        "A maquininha \"${selectedMachine.name}\" não permite parcelamento em ${form.selectedInstallments}x.",
-                    )
-                }
-                form.selectedInstallments
-            } else {
-                1
-            }
-        } else {
-            null
-        }
-
-        return SaleCalculationInput(
-            items = itemInputs,
-            finalAmountOverride = finalAmountOverride,
-            discountMode = discountMode,
-            paymentMethod = paymentMethod,
-            machine = selectedMachine,
-            cardBrand = cardBrand,
-            installments = installments,
-            manualRateOverrideBps = manualRateOverrideBps,
-            note = form.note,
-            cardBrandKey = cardBrandKey,
-        )
     }
 
     private fun verifyPreSaveInvariants(result: SaleCalculationResult) {
@@ -1650,18 +1694,38 @@ class MixVendasShellViewModel(
     ): VenderFormUiState {
         val resolvedMap = resolvedProductsMap(form, activeProducts)
         val filteredQuantities = form.selectedQuantities.filterKeys { resolvedMap.containsKey(it) }
-        val validTarget = if (filteredQuantities.isEmpty()) {
-            VenderFormUiState.DISCOUNT_PROPORTIONAL
-        } else if (
-            !form.isEditing &&
-            !form.finalAmountTouched &&
-            form.discountTargetProductId != VenderFormUiState.DISCOUNT_PROPORTIONAL &&
-            !filteredQuantities.containsKey(form.discountTargetProductId)
-        ) {
-            VenderFormUiState.DISCOUNT_PROPORTIONAL
+        val activeProductIds = filteredQuantities.filterValues { it > 0 }.keys
+
+        val nextCustomized = if (activeProductIds.isEmpty()) false else form.discountSelectionCustomized
+        val nextSelectedDiscountIds = if (activeProductIds.isEmpty()) {
+            emptySet()
+        } else if (nextCustomized) {
+            form.discountSelectedProductIds.intersect(activeProductIds)
         } else {
-            form.discountTargetProductId
+            activeProductIds
         }
+        val nextMissingIds = if (activeProductIds.isEmpty() || nextSelectedDiscountIds.isNotEmpty()) {
+            emptySet()
+        } else {
+            form.discountMissingProductIds
+        }
+
+        val selectedDiscountProducts = nextSelectedDiscountIds.mapNotNull { resolvedMap[it] }
+        val availablePeopleIds = SaleDiscountPolicy.collectPersonIdsInProducts(selectedDiscountProducts)
+        val fixedPeopleIds = SaleDiscountPolicy.detectFixedUnitSharePersonIds(selectedDiscountProducts)
+
+        val cleanedUnprotectedFixed = form.discountUnprotectedFixedPersonIds.intersect(availablePeopleIds)
+        val cleanedProtected = form.discountProtectedPersonIds.intersect(availablePeopleIds)
+        val autoProtectedFixed = fixedPeopleIds - cleanedUnprotectedFixed
+        val nextProtectedPersonIds = cleanedProtected + autoProtectedFixed
+
+        val validTarget = when {
+            nextMissingIds.isNotEmpty() -> nextMissingIds.first()
+            activeProductIds.isEmpty() -> VenderFormUiState.DISCOUNT_PROPORTIONAL
+            nextSelectedDiscountIds.size == 1 && nextCustomized -> nextSelectedDiscountIds.first()
+            else -> VenderFormUiState.DISCOUNT_PROPORTIONAL
+        }
+
         val updatedSubtotalCents = computeSelectedSubtotalCents(filteredQuantities, resolvedMap)
         val nextFinalInput = if (!form.finalAmountTouched) {
             CurrencyFormatter.formatCentsForInput(updatedSubtotalCents)
@@ -1702,6 +1766,11 @@ class MixVendasShellViewModel(
         return form.copy(
             selectedQuantities = filteredQuantities,
             discountTargetProductId = validTarget,
+            discountSelectedProductIds = nextSelectedDiscountIds,
+            discountSelectionCustomized = nextCustomized,
+            discountMissingProductIds = nextMissingIds,
+            discountProtectedPersonIds = nextProtectedPersonIds,
+            discountUnprotectedFixedPersonIds = cleanedUnprotectedFixed,
             finalAmountInput = nextFinalInput,
             selectedMachineId = if (usesMachine) validMachine?.id else null,
             machinePickerOpen = if (usesMachine) form.machinePickerOpen else false,
@@ -2407,6 +2476,217 @@ class MixVendasShellViewModel(
 
         fun parseBrlInputToCents(input: String): Long? =
             CurrencyFormatter.parseBrlToCents(input)
+
+        fun buildCalculationInputFromForm(
+            form: VenderFormUiState,
+            activeProducts: List<Product>,
+            machines: List<Machine>,
+        ): SaleCalculationInput {
+            val productMap = resolvedProductsMap(form, activeProducts)
+            val itemInputs = form.selectedQuantities.entries
+                .filter { it.value > 0 }
+                .map { (productId, qty) ->
+                    val product = productMap[productId]
+                        ?: throw SaleCalculationException("Um produto selecionado não está mais ativo no cadastro. Revise os itens.")
+                    SaleItemInput(
+                        product = product,
+                        quantity = qty,
+                    )
+                }
+            if (itemInputs.isEmpty()) {
+                throw SaleCalculationException("Selecione pelo menos um produto antes de salvar a venda.")
+            }
+
+            var originalSubtotalCents = 0L
+            itemInputs.forEach { line ->
+                val lineTotal = MonetaryRounding.safeMultiply(line.product.price.rawCents, line.quantity)
+                originalSubtotalCents = MonetaryRounding.safeAdd(originalSubtotalCents, lineTotal)
+            }
+
+            val finalAmountOverride: MoneyCents = if (form.finalAmountInput.isBlank()) {
+                throw SaleCalculationException("Informe o valor final da venda.")
+            } else {
+                val parsedCents = CurrencyFormatter.parseBrlToCents(form.finalAmountInput)
+                    ?: throw SaleCalculationException("Valor final da venda inválido. Informe um valor em reais (ex.: 95,00).")
+                if (parsedCents <= 0L) {
+                    throw SaleCalculationException("O valor final da venda deve ser maior que zero.")
+                }
+                if (parsedCents > originalSubtotalCents) {
+                    throw SaleCalculationException(
+                        "O valor final (${CurrencyFormatter.formatBrl(MoneyCents(parsedCents))}) não pode ultrapassar o subtotal original (${CurrencyFormatter.formatBrl(MoneyCents(originalSubtotalCents))}).",
+                    )
+                }
+                MoneyCents(parsedCents)
+            }
+
+            val effectiveFinalCents = finalAmountOverride.rawCents
+            val hasDiscount = effectiveFinalCents < originalSubtotalCents
+            val effectiveTargetIds = form.effectiveDiscountSelectedProductIds()
+            val discountMode = if (hasDiscount) {
+                if (form.isDiscountTargetMissing && effectiveTargetIds.isEmpty()) {
+                    throw SaleCalculationException(
+                        "O produto que recebia o desconto foi removido. Selecione quais produtos devem receber o desconto antes de salvar.",
+                    )
+                }
+                if (effectiveTargetIds.isEmpty()) {
+                    throw SaleCalculationException("Selecione pelo menos um produto para aplicar o desconto.")
+                }
+                when {
+                    !form.discountSelectionCustomized && effectiveTargetIds.size == itemInputs.size ->
+                        SaleDiscountInput.Proportional
+                    effectiveTargetIds.size == 1 ->
+                        SaleDiscountInput.SpecificProduct(effectiveTargetIds.first())
+                    effectiveTargetIds.size == itemInputs.size ->
+                        SaleDiscountInput.Proportional
+                    else ->
+                        SaleDiscountInput.SelectedProducts(effectiveTargetIds)
+                }
+            } else {
+                SaleDiscountInput.Proportional
+            }
+
+            val paymentMethod = when (form.selectedMethod) {
+                PreviewPaymentMethod.CASH -> SalePaymentMethod.CASH
+                PreviewPaymentMethod.PIX -> SalePaymentMethod.PIX
+                PreviewPaymentMethod.DEBIT -> SalePaymentMethod.DEBIT
+                PreviewPaymentMethod.CREDIT -> SalePaymentMethod.CREDIT
+            }
+            val selectedMachine = if (paymentMethod.usesMachine) {
+                val machineId = form.selectedMachineId
+                    ?: throw SaleCalculationException(
+                        "Selecione uma maquininha compatível para pagamentos em ${paymentMethod.label}.",
+                    )
+                if (canUseHistoricalMachineSnapshot(form)) {
+                    val orig = form.originalEditingSale
+                    form.historicalMachineSnapshot!!.toSnapshotMachine(
+                        paymentMethod = paymentMethod,
+                        soldAtEpochMs = orig?.soldAtEpochMs ?: 0L,
+                        updatedAtEpochMs = orig?.updatedAtEpochMs ?: 0L,
+                    )
+                } else {
+                    val machine = machines.firstOrNull { it.id == machineId }
+                        ?: throw SaleCalculationException("A maquininha selecionada não foi encontrada no cadastro.")
+                    if (paymentMethod == SalePaymentMethod.CREDIT && !machine.creditEnabled) {
+                        throw SaleCalculationException("A maquininha \"${machine.name}\" não possui crédito ativado.")
+                    }
+                    machine
+                }
+            } else {
+                null
+            }
+
+            val manualRateOverrideBps = if (paymentMethod.usesMachine && form.feeOverrideEnabled) {
+                if (form.manualRateInput.isBlank()) {
+                    throw SaleCalculationException("Informe a tarifa manual (%) ou desmarque a substituição de tarifa.")
+                }
+                val parsedBps = RateFormatter.parsePercentageToBps(form.manualRateInput)
+                    ?: throw SaleCalculationException("Tarifa manual inválida. Use até 2 casas decimais (ex.: 3,50).")
+                if (parsedBps !in RateFormatter.MIN_RATE_BPS..RateFormatter.MAX_RATE_BPS) {
+                    throw SaleCalculationException("A tarifa manual deve estar entre 0,00% e 100,00%.")
+                }
+                parsedBps
+            } else {
+                null
+            }
+
+            val cardBrandKey = if (paymentMethod.usesMachine && selectedMachine?.brandRatesEnabled == true) {
+                if (
+                    paymentMethod == SalePaymentMethod.DEBIT &&
+                    canUseHistoricalMachineSnapshot(form) &&
+                    form.historicalMachineSnapshot?.resolvedAppliedBrandKey == null &&
+                    form.resolvedBrandKey() == CardBrand.VISA.storageKey
+                ) {
+                    null
+                } else {
+                    form.resolvedBrandKey()
+                }
+            } else {
+                null
+            }
+            val cardBrand = cardBrandKey?.let { CardBrand.fromStorageKey(it) }
+            val installments = if (paymentMethod == SalePaymentMethod.CREDIT) {
+                if (selectedMachine?.installmentsEnabled == true) {
+                    if (!canUseHistoricalMachineSnapshot(form) && !selectedMachine.isInstallmentAllowed(form.selectedInstallments)) {
+                        throw SaleCalculationException(
+                            "A maquininha \"${selectedMachine.name}\" não permite parcelamento em ${form.selectedInstallments}x.",
+                        )
+                    }
+                    form.selectedInstallments
+                } else {
+                    1
+                }
+            } else {
+                null
+            }
+
+            return SaleCalculationInput(
+                items = itemInputs,
+                finalAmountOverride = finalAmountOverride,
+                discountMode = discountMode,
+                paymentMethod = paymentMethod,
+                machine = selectedMachine,
+                cardBrand = cardBrand,
+                installments = installments,
+                manualRateOverrideBps = manualRateOverrideBps,
+                note = form.note,
+                cardBrandKey = cardBrandKey,
+                protectedDiscountPersonIds = if (hasDiscount) form.discountProtectedPersonIds else emptySet(),
+            )
+        }
+
+        fun buildDiscountPreview(
+            form: VenderFormUiState,
+            activeProducts: List<Product>,
+            machines: List<Machine>,
+        ): VenderDiscountPreview {
+            val productMap = resolvedProductsMap(form, activeProducts)
+            val selectedEntries = form.selectedQuantities.entries
+                .filter { it.value > 0 }
+                .mapNotNull { (id, qty) -> productMap[id]?.let { it to qty } }
+            val subtotalCents = computeSelectedSubtotalCents(form.selectedQuantities, productMap)
+            val parsedFinal = parseBrlInputToCents(form.finalAmountInput)
+            val effectiveFinal = if (form.finalAmountInput.isBlank()) subtotalCents else (parsedFinal ?: subtotalCents)
+            val discountCents = (subtotalCents - effectiveFinal).coerceAtLeast(0L)
+            val preError = when {
+                selectedEntries.isEmpty() -> "Selecione pelo menos um produto."
+                form.finalAmountInput.isBlank() -> if (form.finalAmountTouched) "Informe o valor final da venda." else null
+                parsedFinal == null -> "Valor final inválido (ex.: 95,00)."
+                parsedFinal <= 0L -> "O valor final da venda deve ser maior que zero."
+                parsedFinal > subtotalCents -> "O valor final não pode ultrapassar o subtotal original."
+                else -> null
+            }
+            val effectiveTargetIds = form.effectiveDiscountSelectedProductIds()
+            return SaleDiscountPolicy.buildPreview(
+                selectedEntries = selectedEntries,
+                discountSelectedProductIds = effectiveTargetIds,
+                protectedPersonIds = form.discountProtectedPersonIds,
+                discountCents = discountCents,
+                calculationInputBuilder = {
+                    val safeForm = if (form.finalAmountInput.isBlank() && subtotalCents > 0L) {
+                        form.copy(finalAmountInput = CurrencyFormatter.formatCentsForInput(subtotalCents))
+                    } else {
+                        form
+                    }
+                    // Se o pagamento exigir maquininha mas o usuário ainda não escolheu uma,
+                    // calcula a prévia do desconto em Dinheiro (tarifa 0) para que a conferência de desconto
+                    // continue visível em tempo real enquanto ele ajusta os produtos e pessoas!
+                    val needsMachine = safeForm.selectedMethod == PreviewPaymentMethod.DEBIT ||
+                        safeForm.selectedMethod == PreviewPaymentMethod.CREDIT
+                    val resolvedMachine = resolvedSelectedMachine(safeForm, machines)
+                    val previewForm = if (needsMachine && resolvedMachine == null) {
+                        safeForm.copy(selectedMethod = PreviewPaymentMethod.PIX)
+                    } else {
+                        safeForm
+                    }
+                    buildCalculationInputFromForm(
+                        form = previewForm,
+                        activeProducts = activeProducts,
+                        machines = machines,
+                    )
+                },
+                preValidationError = preError,
+            )
+        }
 
         fun provideFactory(
             preferenceRepository: PreferenceRepository,

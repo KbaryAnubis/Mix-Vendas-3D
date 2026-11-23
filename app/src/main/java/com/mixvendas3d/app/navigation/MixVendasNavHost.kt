@@ -184,6 +184,11 @@ fun MixVendasAppShell(
                                 onBrandKeySelected = viewModel::onBrandKeySelected,
                                 onCustomSaleDateToggled = viewModel::onCustomSaleDateToggled,
                                 onSaleDateSelected = viewModel::onSaleDateSelected,
+                                onToggleDiscountProduct = viewModel::onToggleDiscountProduct,
+                                onSelectAllDiscountProducts = viewModel::onSelectAllDiscountProducts,
+                                onClearDiscountProducts = viewModel::onClearDiscountProducts,
+                                onToggleProtectedDiscountPerson = viewModel::onToggleProtectedDiscountPerson,
+                                onAuthorizeUnprotectFixedPerson = viewModel::onAuthorizeUnprotectFixedPerson,
                             )
                         }
                     }

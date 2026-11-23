@@ -306,11 +306,9 @@ class Stage8B1SalesEndToEndIntegrationTest {
         // Desconto específico de R$ 20,00 somente no Vaso -> Valor final R$ 140,00
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("140,00")
         waitUiUntil {
-            composeRule.onAllNodesWithTag("discount_target_dropdown").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        composeRule.waitForIdle()
-        composeRule.onAllNodesWithText("Aplicar somente em Vaso Prisma").onLast().performClick()
+        composeRule.onNodeWithTag("discount_product_row_$prodAId").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("sale_note_input").performScrollTo().performTextReplacement("Pedido Loja 3D")

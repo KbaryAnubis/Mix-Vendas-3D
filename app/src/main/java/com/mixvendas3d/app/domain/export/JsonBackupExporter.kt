@@ -841,7 +841,10 @@ object JsonBackupExporter {
                     sale.id,
                     "Forma de pagamento inválida na venda ${sale.id}: ${sale.paymentMethod}",
                 )
-            if (sale.discountMode != "PROPORTIONAL" && sale.discountMode != "SPECIFIC_PRODUCT") {
+            if (sale.discountMode != "PROPORTIONAL" &&
+                sale.discountMode != "SPECIFIC_PRODUCT" &&
+                sale.discountMode != "SELECTED_PRODUCTS"
+            ) {
                 throw JsonBackupValidationException(
                     sale.id,
                     "Modo de desconto inválido na venda ${sale.id}: ${sale.discountMode}",

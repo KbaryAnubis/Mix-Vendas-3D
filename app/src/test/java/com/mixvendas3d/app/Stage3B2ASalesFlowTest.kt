@@ -542,17 +542,12 @@ class Stage3B2ASalesFlowTest {
         selectProductsInVender(listOf(prodAId to 0, prodBId to 0))
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("80,00")
         waitUiUntil {
-            composeRule.onAllNodesWithTag("discount_target_dropdown").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        waitUiUntil {
-            composeRule.onAllNodesWithText("Aplicar somente em Produto Beta").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onAllNodesWithText("Aplicar somente em Produto Fora").assertCountEquals(0)
-        composeRule.onAllNodesWithText("Distribuir proporcionalmente entre os produtos")
-            .onLast()
-            .performClick()
+        composeRule.onNodeWithTag("discount_product_row_$prodBId").performScrollTo().assertExists()
+        composeRule.onAllNodesWithText("Produto Fora").assertCountEquals(0)
+        // Todos os produtos da venda já vêm selecionados para desconto proporcional
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("pay_method_pix").performScrollTo().performClick()
@@ -565,13 +560,10 @@ class Stage3B2ASalesFlowTest {
         selectProductsInVender(listOf(prodAId to 0, prodBId to 0))
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("85,00")
         waitUiUntil {
-            composeRule.onAllNodesWithTag("discount_target_dropdown").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        waitUiUntil {
-            composeRule.onAllNodesWithText("Aplicar somente em Produto Beta").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithText("Aplicar somente em Produto Beta").performClick()
+        // Desmarca Produto Alfa para aplicar o desconto somente em Produto Beta
+        composeRule.onNodeWithTag("discount_product_row_$prodAId").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("pay_method_cash").performScrollTo().performClick()
@@ -682,10 +674,9 @@ class Stage3B2ASalesFlowTest {
         // D) Desconto específico em Tampa Simples (R$ 40,00) maior que o valor do item (desconto de R$ 50,00 -> final R$ 50,00)
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("50,00")
         waitUiUntil {
-            composeRule.onAllNodesWithTag("discount_target_dropdown").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("discount_target_dropdown").performScrollTo().performClick()
-        composeRule.onNodeWithText("Aplicar somente em Tampa Simples").performClick()
+        composeRule.onNodeWithTag("discount_product_row_$prodAId").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
