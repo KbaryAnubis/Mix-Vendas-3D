@@ -196,9 +196,9 @@ class StageV27AFechamentoUiTest {
         waitUiUntil {
             composeRule.onAllNodesWithTag("period_from_input").fetchSemanticsNodes().isNotEmpty()
         }
-        val oldDay = today.minusDays(20).toString()
-        composeRule.onNodeWithTag("period_from_input").performTextReplacement(oldDay)
-        composeRule.onNodeWithTag("period_to_input").performTextReplacement(oldDay)
+        val oldDay = today.minusDays(20)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_from_input", oldDay)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_to_input", oldDay)
 
         waitUiUntil {
             runCatching {
@@ -210,9 +210,9 @@ class StageV27AFechamentoUiTest {
         }
 
         // Verifica mensagem específica para período sem vendas mantendo diferenciação de banco vazio
-        val emptyDay = today.minusDays(90).toString()
-        composeRule.onNodeWithTag("period_from_input").performTextReplacement(emptyDay)
-        composeRule.onNodeWithTag("period_to_input").performTextReplacement(emptyDay)
+        val emptyDay = today.minusDays(90)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_from_input", emptyDay, currentlySelectedDate = oldDay)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_to_input", emptyDay, currentlySelectedDate = oldDay)
         waitUiUntil {
             runCatching {
                 composeRule.onNodeWithTag("closing_individual_empty_message")

@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -72,6 +74,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -83,6 +86,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mixvendas3d.app.R
+import com.mixvendas3d.app.domain.calculation.DiscountPeopleSelectionMode
 import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
 import com.mixvendas3d.app.domain.calculation.SaleFinancialEngine
@@ -93,8 +97,10 @@ import com.mixvendas3d.app.domain.models.PreviewPaymentMethod
 import com.mixvendas3d.app.domain.models.Product
 import com.mixvendas3d.app.domain.models.ProductCategory
 import com.mixvendas3d.app.domain.reporting.DailySalesAggregator
+import com.mixvendas3d.app.ui.components.DiscountPeopleModeSelector
 import com.mixvendas3d.app.ui.components.DiscountProductsSelectionBox
-import com.mixvendas3d.app.ui.components.DiscountProtectedPeopleBox
+import com.mixvendas3d.app.ui.components.DiscountRecipientPeopleBox
+import com.mixvendas3d.app.ui.components.DiscountUnifiedPeopleBox
 import com.mixvendas3d.app.ui.components.PickerCategoryHeader
 import com.mixvendas3d.app.ui.components.PickerSubcategoryHeader
 import com.mixvendas3d.app.ui.components.Mv3dIcon
@@ -110,6 +116,7 @@ import com.mixvendas3d.app.ui.components.VenderProductPickerFooter
 import com.mixvendas3d.app.ui.components.VenderProductPickerRow
 import com.mixvendas3d.app.ui.components.VenderSectionHeading
 import com.mixvendas3d.app.ui.components.VenderSelectedSummaryBar
+import com.mixvendas3d.app.ui.components.mixVendasDatePickerColors
 import com.mixvendas3d.app.ui.components.namesDarkInputColors
 import com.mixvendas3d.app.ui.theme.GlassInnerBoxBg
 import com.mixvendas3d.app.ui.theme.GlassNeonBorder15
@@ -181,8 +188,10 @@ fun VenderScreen(
     onToggleDiscountProduct: (String) -> Unit = {},
     onSelectAllDiscountProducts: () -> Unit = {},
     onClearDiscountProducts: () -> Unit = {},
-    onToggleProtectedDiscountPerson: (String) -> Unit = {},
-    onAuthorizeUnprotectFixedPerson: (String) -> Unit = {},
+    onToggleDiscountPersonForProduct: (String, String) -> Unit = { _, _ -> },
+    onApplyDiscountToggled: (Boolean) -> Unit = {},
+    onDiscountPeopleModeChanged: (DiscountPeopleSelectionMode) -> Unit = {},
+    onToggleUnifiedDiscountPerson: (String) -> Unit = {},
 ) {
     val form = uiState.venderForm
     var saleDatePickerOpen by rememberSaveable { mutableStateOf(false) }
@@ -211,12 +220,18 @@ fun VenderScreen(
     )
     val typedFinalCents = MixVendasShellViewModel.parseBrlInputToCents(form.finalAmountInput)
     val effectiveFinalCents = when {
+        !form.applyDiscountEnabled -> subtotalCents
         form.finalAmountInput.isBlank() -> subtotalCents
         typedFinalCents != null -> typedFinalCents
         else -> subtotalCents
     }
-    val discountCents = (subtotalCents - effectiveFinalCents).coerceAtLeast(0L)
+    val discountCents = if (form.applyDiscountEnabled) {
+        (subtotalCents - effectiveFinalCents).coerceAtLeast(0L)
+    } else {
+        0L
+    }
     val finalAmountError = when {
+        !form.applyDiscountEnabled -> null
         selectedEntries.isEmpty() -> null
         form.finalAmountInput.isBlank() -> if (form.finalAmountTouched) "Informe o valor final da venda." else null
         typedFinalCents == null -> "Valor final inválido (ex.: 95,00)."
@@ -224,10 +239,10 @@ fun VenderScreen(
         typedFinalCents > subtotalCents -> "Não pode ultrapassar o subtotal original."
         else -> null
     }
-    val showDiscountOptions = selectedEntries.isNotEmpty() &&
-        form.finalAmountInput.isNotBlank() &&
-        typedFinalCents != null &&
-        typedFinalCents in 1L until subtotalCents
+    val showDiscountPreview = form.applyDiscountEnabled &&
+        selectedEntries.isNotEmpty() &&
+        ((form.finalAmountInput.isNotBlank() && typedFinalCents != null && typedFinalCents in 1L until subtotalCents) ||
+            form.isDiscountTargetMissing)
 
     val totalSelectedQty = selectedEntries.sumOf { it.second }
     val summaryTotalCents = if (finalAmountError == null) effectiveFinalCents else subtotalCents
@@ -236,23 +251,47 @@ fun VenderScreen(
     val selectedDiscountEntries = remember(selectedEntries, effectiveDiscountSelectedProductIds) {
         selectedEntries.filter { it.first.id in effectiveDiscountSelectedProductIds }
     }
-    val selectableDiscountPeople = remember(
+    val effectiveRecipientsByProduct = remember(
+        form.discountPeopleSelectionMode,
         selectedDiscountEntries,
-        form.discountProtectedPersonIds,
-        form.discountUnprotectedFixedPersonIds,
+        form.discountUnifiedSelectedPersonIds,
+        form.discountSelectedPeopleByProduct,
     ) {
-        SaleDiscountPolicy.buildSelectablePeopleForDiscount(
-            selectedDiscountEntries = selectedDiscountEntries,
-            protectedPersonIds = form.discountProtectedPersonIds,
-            unprotectedFixedPersonIds = form.discountUnprotectedFixedPersonIds,
+        SaleDiscountPolicy.resolveEffectiveRecipientsByProduct(
+            mode = form.discountPeopleSelectionMode,
+            selectedDiscountProducts = selectedDiscountEntries.map { it.first },
+            unifiedSelectedPersonIds = form.discountUnifiedSelectedPersonIds,
+            individualSelectedPeopleByProduct = form.discountSelectedPeopleByProduct,
         )
+    }
+    val productPeopleGroups = remember(
+        selectedDiscountEntries,
+        effectiveRecipientsByProduct,
+    ) {
+        SaleDiscountPolicy.buildProductPeopleGroups(
+            selectedDiscountEntries = selectedDiscountEntries,
+            selectedPeopleByProduct = effectiveRecipientsByProduct,
+        )
+    }
+    val unifiedPeopleOptions = remember(
+        selectedDiscountEntries,
+        form.discountUnifiedSelectedPersonIds,
+    ) {
+        SaleDiscountPolicy.buildUnifiedPeopleOptions(
+            selectedDiscountEntries = selectedDiscountEntries,
+            unifiedSelectedPersonIds = form.discountUnifiedSelectedPersonIds,
+        )
+    }
+    val missingPeopleProductNames = remember(productPeopleGroups) {
+        productPeopleGroups.filter { it.selectedCount == 0 }.map { it.productName }
     }
     val discountPreview = remember(
         form,
         uiState.activeCatalogProducts,
         uiState.machines,
+        showDiscountPreview,
     ) {
-        if (selectedEntries.isNotEmpty() && (showDiscountOptions || form.isDiscountTargetMissing)) {
+        if (showDiscountPreview) {
             MixVendasShellViewModel.buildDiscountPreview(
                 form = form,
                 activeProducts = uiState.activeCatalogProducts,
@@ -425,9 +464,11 @@ fun VenderScreen(
                     )
                 }
 
-                // Card Valor final e desconto
-                VenderGlassCard {
-                    VenderSectionHeading(text = stringResource(R.string.sell_final_section))
+                // Card Resumo de Valor da venda
+                VenderGlassCard(
+                    modifier = Modifier.testTag("sale_value_summary_card"),
+                ) {
+                    VenderSectionHeading(text = "Valor da venda")
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -452,138 +493,266 @@ fun VenderScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.sell_discount_label),
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 15.sp,
-                            color = HomeCardLabelInk,
-                        )
-                        Text(
-                            text = CurrencyFormatter.formatBrl(MoneyCents(discountCents)),
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = if (discountCents > 0L) V19GoldAccent else Color.White,
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.30f))
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Text(
-                        text = stringResource(R.string.sell_final_input_label),
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color.White,
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = form.finalAmountInput,
-                        onValueChange = onFinalAmountChanged,
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            fontFamily = PlusJakartaSansFontFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 17.sp,
-                            color = Color.White,
-                        ),
-                        placeholder = {
-                            Text(
-                                text = "0,00",
-                                fontFamily = PlusJakartaSansFontFamily,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 17.sp,
-                                color = HomeCardLabelInk.copy(alpha = 0.65f),
-                            )
-                        },
-                        isError = finalAmountError != null,
-                        supportingText = if (finalAmountError != null) {
-                            {
-                                Text(
-                                    text = finalAmountError,
-                                    color = V19ErrorSoft,
-                                    modifier = Modifier.testTag("vender_final_amount_error"),
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = namesDarkInputColors(),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("sale_final_value_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = stringResource(R.string.sell_final_helper),
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = HomeCardLabelInk.copy(alpha = 0.85f),
-                    )
-
-                    if (!form.recalculatedNotice.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .semantics(mergeDescendants = true) {}
-                                .testTag("vender_recalculated_banner"),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (form.recalculatedNoticeIsError) {
-                                V19ErrorContainer
-                            } else {
-                                Color(0xFF281947).copy(alpha = 0.90f)
-                            },
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (form.recalculatedNoticeIsError) V19ErrorSoft else V19GoldAccent.copy(alpha = 0.72f),
-                            ),
+                    if (form.applyDiscountEnabled && discountCents > 0L) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = form.recalculatedNotice,
+                                text = stringResource(R.string.sell_discount_label),
                                 fontFamily = PlusJakartaSansFontFamily,
-                                fontSize = 12.sp,
-                                color = if (form.recalculatedNoticeIsError) V19ErrorSoft else V19GoldAccent,
-                                modifier = Modifier.padding(12.dp),
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 15.sp,
+                                color = HomeCardLabelInk,
+                            )
+                            Text(
+                                text = "- ${CurrencyFormatter.formatBrl(MoneyCents(discountCents))}",
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = V19GoldAccent,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.28f))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Valor final",
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White,
+                            )
+                            Text(
+                                text = CurrencyFormatter.formatBrl(MoneyCents(summaryTotalCents)),
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 17.sp,
+                                color = V19MintSuccess,
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    DiscountProductsSelectionBox(
-                        selectedEntries = selectedEntries,
-                        selectedDiscountProductIds = effectiveDiscountSelectedProductIds,
-                        discountCents = discountCents,
-                        targetMissing = form.isDiscountTargetMissing,
-                        onToggleProduct = onToggleDiscountProduct,
-                        onSelectAll = onSelectAllDiscountProducts,
-                        onClearAll = onClearDiscountProducts,
+                // Seção separada e recolhível: DESCONTOS
+                VenderGlassCard(
+                    modifier = Modifier.testTag("discounts_section_card"),
+                ) {
+                    Text(
+                        text = "DESCONTOS",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp,
+                        letterSpacing = 0.6.sp,
+                        color = Color.White,
+                        modifier = Modifier
+                            .semantics { heading() }
+                            .testTag("discounts_section_title"),
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    DiscountProtectedPeopleBox(
-                        selectablePeople = selectableDiscountPeople,
-                        onToggleProtectedPerson = onToggleProtectedDiscountPerson,
-                        onAuthorizeUnprotectFixedPerson = onAuthorizeUnprotectFixedPerson,
-                        hasProductsInSale = selectedEntries.isNotEmpty(),
-                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val applyRowShape = RoundedCornerShape(14.dp)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(applyRowShape)
+                            .clickable(
+                                role = Role.Checkbox,
+                                onClick = { onApplyDiscountToggled(!form.applyDiscountEnabled) },
+                            )
+                            .testTag("apply_discount_row"),
+                        shape = applyRowShape,
+                        color = GlassInnerBoxBg,
+                        border = BorderStroke(
+                            width = if (form.applyDiscountEnabled) 1.3.dp else 1.1.dp,
+                            color = if (form.applyDiscountEnabled) HomeCardNeonBorder.copy(alpha = 0.78f) else GlassNeonBorder15,
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = form.applyDiscountEnabled,
+                                onCheckedChange = onApplyDiscountToggled,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = V19PurplePrimary,
+                                    uncheckedColor = HomeCardNeonBorder.copy(alpha = 0.75f),
+                                    checkmarkColor = Color.White,
+                                ),
+                                modifier = Modifier.testTag("apply_discount_checkbox"),
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = "APLICAR DESCONTO",
+                                    fontFamily = PlusJakartaSansFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                )
+                                Text(
+                                    text = if (form.applyDiscountEnabled) {
+                                        "Desconto ativo · configure o valor, produtos e pessoas abaixo."
+                                    } else {
+                                        "Marque para conceder desconto nesta venda."
+                                    },
+                                    fontFamily = PlusJakartaSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = HomeCardLabelInk.copy(alpha = 0.85f),
+                                )
+                            }
+                        }
+                    }
+
+                    if (form.applyDiscountEnabled) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.30f))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text(
+                            text = stringResource(R.string.sell_final_input_label),
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = form.finalAmountInput,
+                            onValueChange = onFinalAmountChanged,
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontFamily = PlusJakartaSansFontFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 17.sp,
+                                color = Color.White,
+                            ),
+                            placeholder = {
+                                Text(
+                                    text = "0,00",
+                                    fontFamily = PlusJakartaSansFontFamily,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 17.sp,
+                                    color = HomeCardLabelInk.copy(alpha = 0.65f),
+                                )
+                            },
+                            isError = finalAmountError != null,
+                            supportingText = if (finalAmountError != null) {
+                                {
+                                    Text(
+                                        text = finalAmountError,
+                                        color = V19ErrorSoft,
+                                        modifier = Modifier.testTag("vender_final_amount_error"),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            colors = namesDarkInputColors(),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("sale_final_value_input"),
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = stringResource(R.string.sell_final_helper),
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = HomeCardLabelInk.copy(alpha = 0.85f),
+                        )
+
+                        if (!form.recalculatedNotice.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .semantics(mergeDescendants = true) {}
+                                    .testTag("vender_recalculated_banner"),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (form.recalculatedNoticeIsError) {
+                                    V19ErrorContainer
+                                } else {
+                                    Color(0xFF281947).copy(alpha = 0.90f)
+                                },
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (form.recalculatedNoticeIsError) V19ErrorSoft else V19GoldAccent.copy(alpha = 0.72f),
+                                ),
+                            ) {
+                                Text(
+                                    text = form.recalculatedNotice,
+                                    fontFamily = PlusJakartaSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = if (form.recalculatedNoticeIsError) V19ErrorSoft else V19GoldAccent,
+                                    modifier = Modifier.padding(12.dp),
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        DiscountProductsSelectionBox(
+                            selectedEntries = selectedEntries,
+                            selectedDiscountProductIds = effectiveDiscountSelectedProductIds,
+                            discountCents = discountCents,
+                            targetMissing = form.isDiscountTargetMissing,
+                            onToggleProduct = onToggleDiscountProduct,
+                            onSelectAll = onSelectAllDiscountProducts,
+                            onClearAll = onClearDiscountProducts,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        DiscountPeopleModeSelector(
+                            selectedMode = form.discountPeopleSelectionMode,
+                            onModeSelected = onDiscountPeopleModeChanged,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (form.discountPeopleSelectionMode == DiscountPeopleSelectionMode.UNIFIED) {
+                            DiscountUnifiedPeopleBox(
+                                unifiedOptions = unifiedPeopleOptions,
+                                missingPeopleProductNames = missingPeopleProductNames,
+                                discountCents = discountCents,
+                                hasProductsInSale = selectedEntries.isNotEmpty(),
+                                hasSelectedDiscountProducts = selectedDiscountEntries.isNotEmpty(),
+                                onTogglePerson = onToggleUnifiedDiscountPerson,
+                            )
+                        } else {
+                            DiscountRecipientPeopleBox(
+                                productGroups = productPeopleGroups,
+                                discountCents = discountCents,
+                                onTogglePersonForProduct = onToggleDiscountPersonForProduct,
+                                hasProductsInSale = selectedEntries.isNotEmpty(),
+                            )
+                        }
+
+                        if (discountPreview != null) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            VenderDiscountPreviewCard(
+                                preview = discountPreview,
+                            )
+                        }
+                    }
                 }
 
                 // Card Observação (opcional)
@@ -709,20 +878,15 @@ fun VenderScreen(
                     VenderSectionHeading(text = stringResource(R.string.sell_step_split))
 
                     val discountTargetLabel = if (discountCents > 0L) {
-                        val protectedSuffix = if (form.discountProtectedPersonIds.isNotEmpty()) {
-                            " (${form.discountProtectedPersonIds.size} pessoa(s) protegida(s))"
-                        } else {
-                            ""
-                        }
                         val matchedProducts = selectedEntries.filter { it.first.id in effectiveDiscountSelectedProductIds }
                         when {
                             matchedProducts.isEmpty() -> "nenhum produto selecionado"
                             matchedProducts.size == selectedEntries.size ->
-                                "distribuído proporcionalmente entre todos os produtos$protectedSuffix"
+                                "dividido igualmente entre as pessoas selecionadas em cada produto"
                             matchedProducts.size == 1 ->
-                                "aplicado somente em ${matchedProducts.first().first.name}$protectedSuffix"
+                                "aplicado somente em ${matchedProducts.first().first.name} (divisão igual entre selecionados)"
                             else ->
-                                "aplicado em ${matchedProducts.size} produtos (${matchedProducts.joinToString(", ") { it.first.name }})$protectedSuffix"
+                                "aplicado em ${matchedProducts.size} produtos (${matchedProducts.joinToString(", ") { it.first.name }})"
                         }
                     } else {
                         null
@@ -732,12 +896,6 @@ fun VenderScreen(
                         discountCents = discountCents,
                         discountTargetLabel = discountTargetLabel,
                     )
-
-                    if (discountPreview != null) {
-                        VenderDiscountPreviewCard(
-                            preview = discountPreview,
-                        )
-                    }
                 }
 
                 // Feedback e botão principal
@@ -1112,7 +1270,11 @@ private fun SaleDatePickerModal(
             }
         },
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1187,23 +1349,7 @@ private fun SaleDatePickerModal(
                         modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
                     )
                 },
-                colors = DatePickerDefaults.colors(
-                    containerColor = V19SurfaceCard,
-                    titleContentColor = V19PurpleSoftText,
-                    headlineContentColor = Color.White,
-                    weekdayContentColor = V19InkMuted,
-                    subheadContentColor = V19PurpleSoftText,
-                    navigationContentColor = Color.White,
-                    yearContentColor = Color.White,
-                    currentYearContentColor = V19GoldAccent,
-                    selectedYearContentColor = Color.White,
-                    selectedYearContainerColor = V19PurplePrimary,
-                    dayContentColor = Color.White,
-                    selectedDayContentColor = Color.White,
-                    selectedDayContainerColor = V19PurplePrimary,
-                    todayContentColor = V19GoldAccent,
-                    todayDateBorderColor = V19GoldAccent,
-                ),
+                colors = mixVendasDatePickerColors(),
             )
         }
     }

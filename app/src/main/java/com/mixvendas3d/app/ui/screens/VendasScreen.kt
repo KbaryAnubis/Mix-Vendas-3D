@@ -242,47 +242,11 @@ fun VendasScreen(
                     }
 
                     if (uiState.periodFilter == PreviewPeriodFilter.CUSTOM) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            OutlinedTextField(
-                                value = uiState.periodFromDate,
-                                onValueChange = { onCustomDatesChanged(it, uiState.periodToDate) },
-                                label = { Text("De (AAAA-MM-DD)") },
-                                placeholder = { Text("2026-11-01") },
-                                singleLine = true,
-                                textStyle = TextStyle(
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = Color.White,
-                                ),
-                                colors = namesDarkInputColors(),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("period_from_input"),
-                            )
-                            OutlinedTextField(
-                                value = uiState.periodToDate,
-                                onValueChange = { onCustomDatesChanged(uiState.periodFromDate, it) },
-                                label = { Text("Até (AAAA-MM-DD)") },
-                                placeholder = { Text("2026-11-30") },
-                                singleLine = true,
-                                textStyle = TextStyle(
-                                    fontFamily = PlusJakartaSansFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = Color.White,
-                                ),
-                                colors = namesDarkInputColors(),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("period_to_input"),
-                            )
-                        }
+                        com.mixvendas3d.app.ui.components.CustomDateRangeFilterFields(
+                            fromDate = uiState.periodFromDate,
+                            toDate = uiState.periodToDate,
+                            onCustomDatesChanged = onCustomDatesChanged,
+                        )
                     }
 
                     // Filtro 2 — Pesquisa

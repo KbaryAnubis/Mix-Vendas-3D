@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 import java.util.Locale
 import kotlin.math.abs
 
@@ -14,6 +15,11 @@ object CurrencyFormatter {
         DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss", ptBrLocale)
     private val dateOnlyFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBrLocale)
+    private val strictBrDateFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("dd/MM/uuuu", ptBrLocale)
+            .withResolverStyle(ResolverStyle.STRICT)
+    private val strictIsoDateFormatter: DateTimeFormatter =
+        DateTimeFormatter.ISO_LOCAL_DATE.withResolverStyle(ResolverStyle.STRICT)
     private val timeOnlyFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("HH:mm:ss", ptBrLocale)
 
@@ -102,6 +108,25 @@ object CurrencyFormatter {
 
     fun formatLocalDate(date: LocalDate): String {
         return date.format(dateOnlyFormatter)
+    }
+
+    fun parseBrDate(input: String): LocalDate? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+        return runCatching { LocalDate.parse(trimmed, strictBrDateFormatter) }.getOrNull()
+    }
+
+    fun parseFlexibleFilterDate(input: String): LocalDate? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+        return parseBrDate(trimmed)
+            ?: runCatching { LocalDate.parse(trimmed, strictIsoDateFormatter) }.getOrNull()
+    }
+
+    fun formatFilterDateDisplay(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return ""
+        return parseFlexibleFilterDate(trimmed)?.let(::formatLocalDate) ?: trimmed
     }
 
     fun formatDateOfEpochMillis(

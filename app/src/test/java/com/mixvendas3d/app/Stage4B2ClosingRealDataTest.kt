@@ -438,10 +438,10 @@ class Stage4B2ClosingRealDataTest {
 
             // Venda 2: 2x Prod A (44,00) + 1x Prod B (18,00) -> subtotal original 62,00
             // Desconto específico de 2,00 em Prod B -> Prod A 44,00 (P1 34,00, P2 10,00), Prod B 16,00 -> final 60,00
-            // Simplificando desconto proporcional em Venda 3 e desconto específico aqui no Crédito 10%:
+            // Crédito 10%:
             // Prod A 44,00 (P1 34,00, P2 10,00), taxa 4,40 (100% P1) -> P1 líq 29,60, P2 líq 10,00
-            // Prod B 16,00 (desconto R$ 2,00 em 18,00 -> proporção exata 1:5? 300/1800 = 1/6 -> P1 2,67, P2 13,33),
-            // taxa 1,60 (EQUAL -> P1 0,80, P2 0,80) -> P1 líq 1,87, P2 líq 12,53
+            // Prod B 16,00 (desconto R$ 2,00 dividido igualmente -> -1,00 cada -> P1 2,00, P2 14,00),
+            // taxa 1,60 (EQUAL -> P1 0,80, P2 0,80) -> P1 líq 1,20, P2 líq 13,20
             insertRealSaleAt(
                 app = app,
                 epochMs = nowMs + 1_000L,
@@ -454,8 +454,8 @@ class Stage4B2ClosingRealDataTest {
                 installments = 1,
             )
 
-            // Venda 3: 2x Prod C (subtotal 100,00) com desconto proporcional para 80,00 no Débito 2%
-            // P3 bruto 48,00, P4 bruto 32,00 | taxa 1,60 (P3 0,96, P4 0,64) | P3 líq 47,04, P4 líq 31,36
+            // Venda 3: 2x Prod C (subtotal 100,00) com desconto de 20,00 dividido igualmente (-10,00 cada) no Débito 2%
+            // P3 bruto 50,00, P4 bruto 30,00 | taxa 1,60 (P3 1,00, P4 0,60) | P3 líq 49,00, P4 líq 29,40
             insertRealSaleAt(
                 app = app,
                 epochMs = nowMs + 2_000L,
@@ -488,11 +488,11 @@ class Stage4B2ClosingRealDataTest {
         // Subtotal original = 40,00 + 62,00 + 100,00 = R$ 202,00
         // Descontos = 0,00 + 2,00 + 20,00 = R$ 22,00
         // Vendido = R$ 180,00 | Tarifas = 0 + 6,00 + 1,60 = R$ 7,60 | Líquido = R$ 172,40
-        // P1: bruto 20,00 + (34,00 + 2,67) = 56,67 | taxa 4,40 + 0,80 = 5,20 | líq 51,47
-        // P2: bruto 20,00 + (10,00 + 13,33) = 43,33 | taxa 0,80 | líq 42,53
-        // P3: bruto 48,00 | taxa 0,96 | líq 47,04
-        // P4: bruto 32,00 | taxa 0,64 | líq 31,36
-        // Soma líquidos: 51,47 + 42,53 + 47,04 + 31,36 = 172,40!
+        // P1: bruto 20,00 + (34,00 + 2,00) = 56,00 | taxa 4,40 + 0,80 = 5,20 | líq 50,80
+        // P2: bruto 20,00 + (10,00 + 14,00) = 44,00 | taxa 0,80 | líq 43,20
+        // P3: bruto 50,00 | taxa 1,00 | líq 49,00
+        // P4: bruto 30,00 | taxa 0,60 | líq 29,40
+        // Soma líquidos: 50,80 + 43,20 + 49,00 + 29,40 = 172,40!
         waitUiUntil {
             composeRule.onAllNodesWithText("R$ 180,00", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -516,37 +516,37 @@ class Stage4B2ClosingRealDataTest {
         composeRule.onNodeWithTag("closing_individual_row_$p1Id")
             .performScrollTo()
             .assertTextContains("Pessoa 1", substring = true)
-            .assertTextContains("R$ 56,67", substring = true)
+            .assertTextContains("R$ 56,00", substring = true)
             .assertTextContains("− R$ 5,20", substring = true)
-            .assertTextContains("R$ 51,47", substring = true)
+            .assertTextContains("R$ 50,80", substring = true)
 
         composeRule.onNodeWithTag("closing_individual_row_$p2Id")
             .performScrollTo()
             .assertTextContains("Pessoa 2", substring = true)
-            .assertTextContains("R$ 43,33", substring = true)
+            .assertTextContains("R$ 44,00", substring = true)
             .assertTextContains("− R$ 0,80", substring = true)
-            .assertTextContains("R$ 42,53", substring = true)
+            .assertTextContains("R$ 43,20", substring = true)
 
         composeRule.onNodeWithTag("closing_individual_row_$p3Id")
             .performScrollTo()
             .assertTextContains("Pessoa 3", substring = true)
-            .assertTextContains("R$ 48,00", substring = true)
-            .assertTextContains("− R$ 0,96", substring = true)
-            .assertTextContains("R$ 47,04", substring = true)
+            .assertTextContains("R$ 50,00", substring = true)
+            .assertTextContains("− R$ 1,00", substring = true)
+            .assertTextContains("R$ 49,00", substring = true)
 
         composeRule.onNodeWithTag("closing_individual_row_$p4Id")
             .performScrollTo()
             .assertTextContains("Pessoa 4", substring = true)
-            .assertTextContains("R$ 32,00", substring = true)
-            .assertTextContains("− R$ 0,64", substring = true)
-            .assertTextContains("R$ 31,36", substring = true)
+            .assertTextContains("R$ 30,00", substring = true)
+            .assertTextContains("− R$ 0,60", substring = true)
+            .assertTextContains("R$ 29,40", substring = true)
 
         composeRule.onAllNodesWithTag("split_balance_banner").assertCountEquals(0)
-        // Conservação dos centavos confirmada nos cards individuais (51,47 + 42,53 + 47,04 + 31,36 = 172,40)
-        composeRule.onNodeWithTag("closing_person_card_$p1Id").performScrollTo().assertTextContains("R$ 51,47", substring = true)
-        composeRule.onNodeWithTag("closing_person_card_$p2Id").performScrollTo().assertTextContains("R$ 42,53", substring = true)
-        composeRule.onNodeWithTag("closing_person_card_$p3Id").performScrollTo().assertTextContains("R$ 47,04", substring = true)
-        composeRule.onNodeWithTag("closing_person_card_$p4Id").performScrollTo().assertTextContains("R$ 31,36", substring = true)
+        // Conservação dos centavos confirmada nos cards individuais (50,80 + 43,20 + 49,00 + 29,40 = 172,40)
+        composeRule.onNodeWithTag("closing_person_card_$p1Id").performScrollTo().assertTextContains("R$ 50,80", substring = true)
+        composeRule.onNodeWithTag("closing_person_card_$p2Id").performScrollTo().assertTextContains("R$ 43,20", substring = true)
+        composeRule.onNodeWithTag("closing_person_card_$p3Id").performScrollTo().assertTextContains("R$ 49,00", substring = true)
+        composeRule.onNodeWithTag("closing_person_card_$p4Id").performScrollTo().assertTextContains("R$ 29,40", substring = true)
     }
 
     @Test
@@ -640,16 +640,16 @@ class Stage4B2ClosingRealDataTest {
             }.getOrDefault(false)
         }
 
-        // Filtra Fechamento para Datas personalizadas (45 dias atrás -> R$ 150,00, 1 venda)
-        val oldDateStr = today.minusDays(45).toString()
+        // Filtra Fechamento para Datas personalizadas via calendário interativo em DD/MM/AAAA (45 dias atrás -> R$ 150,00, 1 venda)
+        val oldDate = today.minusDays(45)
         composeRule.onNodeWithTag("period_dropdown_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("period_option_custom").performClick()
         waitUiUntil {
             composeRule.onAllNodesWithTag("period_from_input").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("period_from_input").performTextReplacement(oldDateStr)
-        composeRule.onNodeWithTag("period_to_input").performTextReplacement(oldDateStr)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_from_input", oldDate)
+        PeriodCalendarTestHelper.pickDate(composeRule, "period_to_input", oldDate)
         waitUiUntil {
             runCatching {
                 composeRule.onNodeWithTag("hero_summary_card")

@@ -72,19 +72,19 @@ object SaleFinancialEngine {
         }
         val discountTotalCents = MonetaryRounding.safeSubtract(originalSubtotalCents, targetFinalCents)
 
-        // 4. Distribui desconto entre itens conforme seleção de produtos e pessoas protegidas
+        // 4. Distribui desconto entre os produtos selecionados e valida seleções por produto
         val (itemDiscounts, discountConfigSnapshot) = allocateDiscountsAcrossItems(
             lines = consolidatedLines,
             lineSubtotals = lineSubtotals,
             discountTotalCents = discountTotalCents,
             discountMode = input.discountMode,
-            protectedPersonIds = input.protectedDiscountPersonIds,
+            discountRecipientPersonIdsByProduct = input.discountRecipientPersonIdsByProduct,
         )
 
         // 5. Resolve taxa efetiva de maquininha / pagamento
         val resolvedRate = resolvePaymentAndMachineRate(input)
 
-        // 6. Calcula cada item separadamente (divisão pós-desconto + tarifa do item + responsabilidade)
+        // 6. Calcula cada item separadamente (divisão igualitária do desconto entre selecionados + tarifa + responsabilidade)
         val itemResults = ArrayList<SaleItemCalculationResult>(consolidatedLines.size)
         var totalFeesCents = 0L
         var totalNetCents = 0L
@@ -98,18 +98,21 @@ object SaleFinancialEngine {
             val lineDiscount = itemDiscounts.getValue(product.id)
             val lineFinal = MonetaryRounding.safeSubtract(lineOriginalSubtotal, lineDiscount)
 
-            // Recalcula divisão bruta dos participantes sobre o valor efetivo do item (pós-desconto),
-            // preservando integralmente os participantes protegidos.
+            // Calcula divisão pós-desconto igualitária entre os participantes selecionados neste produto,
+            // mantendo 100% intacta a participação dos participantes não selecionados.
             val originalParticipantLineAmounts = LinkedHashMap<String, Long>(product.participants.size)
             product.participants.forEach { split ->
                 val lineParticipantOrig = MonetaryRounding.safeMultiply(split.amount.rawCents, line.quantity)
                 originalParticipantLineAmounts[split.personId] = lineParticipantOrig
             }
+            val selectedRecipientsForProduct = input.discountRecipientPersonIdsByProduct?.let { map ->
+                map[product.id].orEmpty()
+            }
             val participantGrossMap = allocateItemGrossToParticipants(
                 product = product,
                 originalParticipantLineAmounts = originalParticipantLineAmounts,
                 lineDiscountCents = lineDiscount,
-                protectedPersonIds = input.protectedDiscountPersonIds,
+                selectedRecipientIds = selectedRecipientsForProduct,
             )
 
             // Calcula tarifa separada para este item sobre o valor efetivamente cobrado após o desconto
@@ -336,45 +339,44 @@ object SaleFinancialEngine {
         product: Product,
         originalParticipantLineAmounts: Map<String, Long>,
         lineDiscountCents: Long,
-        protectedPersonIds: Set<String>,
+        selectedRecipientIds: Set<String>?,
     ): Map<String, Long> {
         if (lineDiscountCents == 0L) {
             return originalParticipantLineAmounts
         }
 
-        val result = LinkedHashMap<String, Long>(product.participants.size)
-        val eligibleBuckets = ArrayList<WeightedAllocationBucket>(product.participants.size)
-        var eligibleOriginalTotal = 0L
-
-        product.participants.forEach { split ->
-            val orig = originalParticipantLineAmounts.getValue(split.personId)
-            if (split.personId in protectedPersonIds) {
-                result[split.personId] = orig
-            } else {
-                eligibleOriginalTotal = MonetaryRounding.safeAdd(eligibleOriginalTotal, orig)
-                eligibleBuckets.add(WeightedAllocationBucket(key = split.personId, weight = orig))
-            }
+        val validParticipantIds = product.participants.mapTo(HashSet(product.participants.size)) { it.personId }
+        val resolvedRecipientIds = if (selectedRecipientIds == null) {
+            validParticipantIds
+        } else {
+            selectedRecipientIds.intersect(validParticipantIds)
         }
 
-        if (lineDiscountCents > eligibleOriginalTotal) {
+        if (resolvedRecipientIds.isEmpty()) {
             throw SaleCalculationException(
-                "Saldo elegível insuficiente no produto \"${product.name}\" para absorver o desconto sem reduzir pessoas protegidas.",
+                "Selecione pelo menos uma pessoa para receber o desconto no produto \"${product.name}\".",
             )
         }
 
-        val eligibleFinalPool = MonetaryRounding.safeSubtract(eligibleOriginalTotal, lineDiscountCents)
-        if (eligibleBuckets.isNotEmpty()) {
-            val allocatedEligibleGross = if (eligibleFinalPool == 0L) {
-                eligibleBuckets.associate { it.key to 0L }
-            } else {
-                MonetaryRounding.allocateByWeightsDeterministic(
-                    totalAmount = eligibleFinalPool,
-                    buckets = eligibleBuckets,
+        val recipientSplits = product.participants.filter { it.personId in resolvedRecipientIds }
+        val equalBuckets = recipientSplits.map { split ->
+            WeightedAllocationBucket(key = split.personId, weight = 1L)
+        }
+        val equalDiscounts = MonetaryRounding.allocateByWeightsDeterministic(
+            totalAmount = lineDiscountCents,
+            buckets = equalBuckets,
+        )
+
+        val result = LinkedHashMap<String, Long>(product.participants.size)
+        product.participants.forEach { split ->
+            val orig = originalParticipantLineAmounts.getValue(split.personId)
+            val personDiscount = equalDiscounts[split.personId] ?: 0L
+            if (personDiscount > orig) {
+                throw SaleCalculationException(
+                    "O desconto igualitário de ${CurrencyFormatter.formatBrl(MoneyCents(personDiscount))} para \"${split.personName}\" no produto \"${product.name}\" ultrapassa a participação disponível (${CurrencyFormatter.formatBrl(MoneyCents(orig))}). Selecione mais pessoas ou reduza o desconto.",
                 )
             }
-            allocatedEligibleGross.forEach { (personId, gross) ->
-                result[personId] = gross
-            }
+            result[split.personId] = MonetaryRounding.safeSubtract(orig, personDiscount)
         }
 
         return result
@@ -385,7 +387,7 @@ object SaleFinancialEngine {
         lineSubtotals: Map<String, Long>,
         discountTotalCents: Long,
         discountMode: SaleDiscountInput,
-        protectedPersonIds: Set<String>,
+        discountRecipientPersonIdsByProduct: Map<String, Set<String>>?,
     ): Pair<Map<String, Long>, SaleDiscountConfigSnapshot> {
         val zeroMap = lines.associate { it.product.id to 0L }
         val linesById = lines.associateBy { it.product.id }
@@ -437,46 +439,37 @@ object SaleFinancialEngine {
         }
 
         var totalSelectedSubtotal = 0L
-        var totalProtectedSubtotal = 0L
-        var totalEligibleSubtotal = 0L
         var totalMaxAbsorbableDiscount = 0L
-
         val cappedBuckets = ArrayList<CappedWeightedAllocationBucket>(targetLines.size)
 
         targetLines.forEach { line ->
             val product = line.product
             val lineSubtotal = lineSubtotals.getValue(product.id)
-            var protectedLineSubtotal = 0L
-            product.participants.forEach { split ->
-                if (split.personId in protectedPersonIds) {
-                    val splitLine = MonetaryRounding.safeMultiply(split.amount.rawCents, line.quantity)
-                    protectedLineSubtotal = MonetaryRounding.safeAdd(protectedLineSubtotal, splitLine)
+
+            if (discountRecipientPersonIdsByProduct != null) {
+                val validIds = product.participants.mapTo(HashSet(product.participants.size)) { it.personId }
+                val selectedForLine = discountRecipientPersonIdsByProduct[product.id].orEmpty().intersect(validIds)
+                if (selectedForLine.isEmpty()) {
+                    throw SaleCalculationException(
+                        "Selecione pelo menos uma pessoa para receber o desconto no produto \"${product.name}\".",
+                    )
                 }
             }
-            val eligibleLineSubtotal = MonetaryRounding.safeSubtract(lineSubtotal, protectedLineSubtotal)
-            // Cada item vendido precisa manter valor final >= R$ 0,01.
-            // Se há participação protegida positiva, ela já garante finalAmount >= protectedLineSubtotal >= 1 centavo.
-            val maxItemDiscount = if (protectedLineSubtotal > 0L) {
-                eligibleLineSubtotal
-            } else {
-                (eligibleLineSubtotal - 1L).coerceAtLeast(0L)
-            }
 
+            val maxItemDiscount = (lineSubtotal - 1L).coerceAtLeast(0L)
             totalSelectedSubtotal = MonetaryRounding.safeAdd(totalSelectedSubtotal, lineSubtotal)
-            totalProtectedSubtotal = MonetaryRounding.safeAdd(totalProtectedSubtotal, protectedLineSubtotal)
-            totalEligibleSubtotal = MonetaryRounding.safeAdd(totalEligibleSubtotal, eligibleLineSubtotal)
             totalMaxAbsorbableDiscount = MonetaryRounding.safeAdd(totalMaxAbsorbableDiscount, maxItemDiscount)
 
             cappedBuckets.add(
                 CappedWeightedAllocationBucket(
                     key = product.id,
-                    weight = eligibleLineSubtotal,
+                    weight = lineSubtotal,
                     maxAmount = maxItemDiscount,
                 ),
             )
         }
 
-        if (totalProtectedSubtotal == 0L && discountTotalCents >= totalSelectedSubtotal) {
+        if (discountTotalCents >= totalSelectedSubtotal) {
             if (targetLines.size == 1) {
                 val onlyLine = targetLines.first()
                 throw SaleCalculationException(
@@ -488,18 +481,7 @@ object SaleFinancialEngine {
             )
         }
 
-        if (totalEligibleSubtotal <= 0L) {
-            throw SaleCalculationException(
-                "Todos os participantes dos produtos selecionados estão protegidos contra o desconto. Desmarque ao menos uma pessoa ou selecione outros produtos.",
-            )
-        }
-
         if (discountTotalCents > totalMaxAbsorbableDiscount) {
-            if (totalProtectedSubtotal > 0L) {
-                throw SaleCalculationException(
-                    "Saldo elegível insuficiente (${CurrencyFormatter.formatBrl(MoneyCents(totalMaxAbsorbableDiscount))}) para absorver o desconto de ${CurrencyFormatter.formatBrl(MoneyCents(discountTotalCents))} sem reduzir a participação das pessoas protegidas.",
-                )
-            }
             throw SaleCalculationException(
                 "O desconto (${CurrencyFormatter.formatBrl(MoneyCents(discountTotalCents))}) excede o limite absorvível pelos produtos selecionados (${CurrencyFormatter.formatBrl(MoneyCents(totalMaxAbsorbableDiscount))}).",
             )

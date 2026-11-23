@@ -304,8 +304,8 @@ class StageV26AVendasUiTest {
             .assert(hasAnyDescendant(hasText("Valor original: R$ 22,00", substring = true)))
             .assert(hasAnyDescendant(hasText("Desconto − R$ 2,00", substring = true)))
             .assert(hasAnyDescendant(hasText("Pessoa 1", substring = true)))
-            .assert(hasAnyDescendant(hasText("R$ 15,45", substring = true)))
-            .assert(hasAnyDescendant(hasText("R$ 4,55", substring = true)))
+            .assert(hasAnyDescendant(hasText("R$ 16,00", substring = true)))
+            .assert(hasAnyDescendant(hasText("R$ 4,00", substring = true)))
 
         composeRule.onNodeWithTag("sale_item_detail_${saleId}_$prodBId")
             .performScrollTo()

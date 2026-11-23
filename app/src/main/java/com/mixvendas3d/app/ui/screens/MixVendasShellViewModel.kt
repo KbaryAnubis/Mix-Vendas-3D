@@ -9,6 +9,7 @@ import com.mixvendas3d.app.data.repository.CatalogRepository
 import com.mixvendas3d.app.data.repository.MachineRepository
 import com.mixvendas3d.app.data.repository.PreferenceRepository
 import com.mixvendas3d.app.data.repository.SaleRepository
+import com.mixvendas3d.app.domain.calculation.DiscountPeopleSelectionMode
 import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.calculation.SaleCalculationException
 import com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
@@ -132,12 +133,15 @@ data class VenderFormUiState(
     val pickerSearchQuery: String = "",
     val finalAmountInput: String = "",
     val finalAmountTouched: Boolean = false,
+    val applyDiscountEnabled: Boolean = false,
     val discountTargetProductId: String = DISCOUNT_PROPORTIONAL,
     val discountSelectedProductIds: Set<String> = emptySet(),
     val discountSelectionCustomized: Boolean = false,
     val discountMissingProductIds: Set<String> = emptySet(),
-    val discountProtectedPersonIds: Set<String> = emptySet(),
-    val discountUnprotectedFixedPersonIds: Set<String> = emptySet(),
+    val discountSelectedPeopleByProduct: Map<String, Set<String>> = emptyMap(),
+    val discountPeopleSelectionMode: DiscountPeopleSelectionMode = DiscountPeopleSelectionMode.UNIFIED,
+    val discountUnifiedSelectedPersonIds: Set<String> = emptySet(),
+    val discountUnifiedKnownPersonIds: Set<String> = emptySet(),
     val selectedMethod: PreviewPaymentMethod = PreviewPaymentMethod.PIX,
     val selectedMachineId: String? = null,
     val machinePickerOpen: Boolean = false,
@@ -732,8 +736,8 @@ class MixVendasShellViewModel(
             PreviewPeriodFilter.MONTH -> CsvExportPeriod(today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()))
             PreviewPeriodFilter.ALL -> CsvExportPeriod(null, null)
             PreviewPeriodFilter.CUSTOM -> {
-                val from = parseOptionalIsoDate(filter.closingPeriodFromDate)
-                val to = parseOptionalIsoDate(filter.closingPeriodToDate)
+                val from = parseOptionalFilterDate(filter.closingPeriodFromDate)
+                val to = parseOptionalFilterDate(filter.closingPeriodToDate)
                 if (from != null && to != null && from.isAfter(to)) {
                     null
                 } else {
@@ -934,17 +938,19 @@ class MixVendasShellViewModel(
                 is SaleDiscountConfigSnapshot.SelectedProducts -> VenderFormUiState.DISCOUNT_PROPORTIONAL
             }
             val hasDiscount = calc.finalAmount.rawCents < calc.originalSubtotal.rawCents
-            val inferredProtectedIds = SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(
+            val inferredRecipientsByProduct = SaleDiscountPolicy.inferDiscountRecipientsByProductFromSnapshot(
                 calc = calc,
                 selectedDiscountProductIds = selectedDiscountIds,
             )
-            val selectedDiscountProducts = selectedDiscountIds.mapNotNull { historicalProducts[it] }
-            val fixedPeopleInSelected = SaleDiscountPolicy.detectFixedUnitSharePersonIds(selectedDiscountProducts)
-            val unprotectedFixedIds = if (hasDiscount) {
-                fixedPeopleInSelected - inferredProtectedIds
-            } else {
-                emptySet()
-            }
+            val (inferredMode, inferredUnifiedSelected) = SaleDiscountPolicy.inferDiscountSelectionModeFromSnapshot(
+                calc = calc,
+                selectedDiscountProductIds = selectedDiscountIds,
+                recipientsByProduct = inferredRecipientsByProduct,
+            )
+            val unifiedKnownIds = calc.items
+                .filter { it.productId in selectedDiscountIds }
+                .flatMap { it.participantSplits }
+                .mapTo(LinkedHashSet()) { it.personId }
             val snap = calc.machineSnapshot
 
             val resolvedEditBrandKey = snap?.resolvedAppliedBrandKey ?: CardBrand.VISA.storageKey
@@ -962,12 +968,15 @@ class MixVendasShellViewModel(
                 pickerSearchQuery = "",
                 finalAmountInput = CurrencyFormatter.formatCentsForInput(calc.finalAmount.rawCents),
                 finalAmountTouched = hasDiscount,
+                applyDiscountEnabled = hasDiscount,
                 discountTargetProductId = discountTarget,
                 discountSelectedProductIds = selectedDiscountIds,
                 discountSelectionCustomized = discountCustomized,
                 discountMissingProductIds = emptySet(),
-                discountProtectedPersonIds = inferredProtectedIds,
-                discountUnprotectedFixedPersonIds = unprotectedFixedIds,
+                discountSelectedPeopleByProduct = inferredRecipientsByProduct,
+                discountPeopleSelectionMode = inferredMode,
+                discountUnifiedSelectedPersonIds = inferredUnifiedSelected,
+                discountUnifiedKnownPersonIds = unifiedKnownIds,
                 selectedMethod = calc.paymentMethod.toPreviewPaymentMethod(),
                 selectedMachineId = snap?.machineId,
                 machinePickerOpen = false,
@@ -1222,8 +1231,6 @@ class MixVendasShellViewModel(
                 discountSelectedProductIds = emptySet(),
                 discountSelectionCustomized = true,
                 discountMissingProductIds = emptySet(),
-                discountProtectedPersonIds = emptySet(),
-                discountUnprotectedFixedPersonIds = emptySet(),
                 recalculatedNotice = null,
                 recalculatedNoticeIsError = false,
                 feedbackMessage = null,
@@ -1234,23 +1241,19 @@ class MixVendasShellViewModel(
         )
     }
 
-    fun onToggleProtectedDiscountPerson(personId: String) {
+    fun onApplyDiscountToggled(enabled: Boolean) {
         val current = venderFormFlow.value
-        val isCurrentlyProtected = personId in current.discountProtectedPersonIds
-        val updatedProtected = if (isCurrentlyProtected) {
-            current.discountProtectedPersonIds - personId
-        } else {
-            current.discountProtectedPersonIds + personId
-        }
-        val updatedUnprotectedFixed = if (isCurrentlyProtected) {
-            current.discountUnprotectedFixedPersonIds + personId
-        } else {
-            current.discountUnprotectedFixedPersonIds - personId
-        }
+        val resolvedProducts = resolvedProductsMap(current, latestActiveProducts)
+        val subtotalCents = computeSelectedSubtotalCents(current.selectedQuantities, resolvedProducts)
+        val restoredInput = CurrencyFormatter.formatCentsForInput(subtotalCents)
         venderFormFlow.value = syncForm(
             form = current.copy(
-                discountProtectedPersonIds = updatedProtected,
-                discountUnprotectedFixedPersonIds = updatedUnprotectedFixed,
+                applyDiscountEnabled = enabled,
+                finalAmountInput = restoredInput,
+                finalAmountTouched = false,
+                discountMissingProductIds = emptySet(),
+                recalculatedNotice = null,
+                recalculatedNoticeIsError = false,
                 feedbackMessage = null,
                 feedbackIsError = false,
             ),
@@ -1259,12 +1262,108 @@ class MixVendasShellViewModel(
         )
     }
 
-    fun onAuthorizeUnprotectFixedPerson(personId: String) {
+    fun onDiscountPeopleModeChanged(mode: DiscountPeopleSelectionMode) {
         val current = venderFormFlow.value
+        if (current.discountPeopleSelectionMode == mode) return
+        val resolvedMap = resolvedProductsMap(current, latestActiveProducts)
+        val effectiveTargetIds = current.effectiveDiscountSelectedProductIds()
+        val selectedTargetProducts = effectiveTargetIds.mapNotNull { resolvedMap[it] }
+
+        when (mode) {
+            DiscountPeopleSelectionMode.UNIFIED -> {
+                val allUnifiedIds = LinkedHashSet<String>()
+                val unionSelected = LinkedHashSet<String>()
+                selectedTargetProducts.forEach { product ->
+                    val validIds = product.participants.mapTo(LinkedHashSet()) { it.personId }
+                    allUnifiedIds.addAll(validIds)
+                    val perProduct = current.discountSelectedPeopleByProduct[product.id]
+                        ?.intersect(validIds)
+                        ?: validIds
+                    unionSelected.addAll(perProduct)
+                }
+                venderFormFlow.value = syncForm(
+                    form = current.copy(
+                        discountPeopleSelectionMode = DiscountPeopleSelectionMode.UNIFIED,
+                        discountUnifiedSelectedPersonIds = unionSelected,
+                        discountUnifiedKnownPersonIds = allUnifiedIds,
+                        feedbackMessage = null,
+                        feedbackIsError = false,
+                    ),
+                    activeProducts = latestActiveProducts,
+                    machines = latestMachines,
+                )
+            }
+            DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT -> {
+                val updatedMap = LinkedHashMap(current.discountSelectedPeopleByProduct)
+                selectedTargetProducts.forEach { product ->
+                    val validIds = product.participants.mapTo(LinkedHashSet()) { it.personId }
+                    updatedMap[product.id] = validIds.intersect(current.discountUnifiedSelectedPersonIds)
+                }
+                venderFormFlow.value = syncForm(
+                    form = current.copy(
+                        discountPeopleSelectionMode = DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT,
+                        discountSelectedPeopleByProduct = updatedMap,
+                        feedbackMessage = null,
+                        feedbackIsError = false,
+                    ),
+                    activeProducts = latestActiveProducts,
+                    machines = latestMachines,
+                )
+            }
+        }
+    }
+
+    fun onToggleUnifiedDiscountPerson(personId: String) {
+        val current = venderFormFlow.value
+        val resolvedMap = resolvedProductsMap(current, latestActiveProducts)
+        val effectiveTargetIds = current.effectiveDiscountSelectedProductIds()
+        val selectedTargetProducts = effectiveTargetIds.mapNotNull { resolvedMap[it] }
+        val unifiedPool = selectedTargetProducts
+            .flatMap { it.participants }
+            .mapTo(LinkedHashSet()) { it.personId }
+        if (personId !in unifiedPool) return
+
+        val nextSelected = if (personId in current.discountUnifiedSelectedPersonIds) {
+            current.discountUnifiedSelectedPersonIds - personId
+        } else {
+            current.discountUnifiedSelectedPersonIds + personId
+        }
+        val nextKnown = current.discountUnifiedKnownPersonIds + unifiedPool
         venderFormFlow.value = syncForm(
             form = current.copy(
-                discountProtectedPersonIds = current.discountProtectedPersonIds - personId,
-                discountUnprotectedFixedPersonIds = current.discountUnprotectedFixedPersonIds + personId,
+                discountUnifiedSelectedPersonIds = nextSelected,
+                discountUnifiedKnownPersonIds = nextKnown,
+                feedbackMessage = null,
+                feedbackIsError = false,
+            ),
+            activeProducts = latestActiveProducts,
+            machines = latestMachines,
+        )
+    }
+
+    fun onToggleDiscountPersonForProduct(
+        productId: String,
+        personId: String,
+    ) {
+        val current = venderFormFlow.value
+        val resolvedMap = resolvedProductsMap(current, latestActiveProducts)
+        val product = resolvedMap[productId] ?: return
+        val validParticipantIds = product.participants.mapTo(LinkedHashSet()) { it.personId }
+        if (personId !in validParticipantIds) return
+        val currentSelectedForProduct = current.discountSelectedPeopleByProduct[productId]
+            ?.intersect(validParticipantIds)
+            ?: validParticipantIds
+        val updatedForProduct = if (personId in currentSelectedForProduct) {
+            currentSelectedForProduct - personId
+        } else {
+            currentSelectedForProduct + personId
+        }
+        val updatedMap = LinkedHashMap(current.discountSelectedPeopleByProduct).apply {
+            put(productId, updatedForProduct)
+        }
+        venderFormFlow.value = syncForm(
+            form = current.copy(
+                discountSelectedPeopleByProduct = updatedMap,
                 feedbackMessage = null,
                 feedbackIsError = false,
             ),
@@ -1510,7 +1609,8 @@ class MixVendasShellViewModel(
 
         val prevSubtotalCents = computeSelectedSubtotalCents(current.selectedQuantities, resolvedProducts)
         val prevParsedFinal = CurrencyFormatter.parseBrlToCents(current.finalAmountInput)
-        val prevHadDiscount = current.finalAmountTouched &&
+        val prevHadDiscount = current.applyDiscountEnabled &&
+            current.finalAmountTouched &&
             prevParsedFinal != null &&
             prevSubtotalCents > 0L &&
             prevParsedFinal in 1L until prevSubtotalCents
@@ -1529,6 +1629,9 @@ class MixVendasShellViewModel(
 
         if (cleanQuantities.isEmpty() || newSubtotalCents <= 0L) {
             nextFinalInput = ""
+            nextFinalTouched = false
+        } else if (!current.applyDiscountEnabled) {
+            nextFinalInput = CurrencyFormatter.formatCentsForInput(newSubtotalCents)
             nextFinalTouched = false
         } else if (prevDiscountCents > 0L) {
             val candidateFinal = newSubtotalCents - prevDiscountCents
@@ -1570,7 +1673,8 @@ class MixVendasShellViewModel(
             cleanQuantities.keys
         }
 
-        val hadExplicitTargetWipedOut = cleanQuantities.isNotEmpty() &&
+        val hadExplicitTargetWipedOut = current.applyDiscountEnabled &&
+            cleanQuantities.isNotEmpty() &&
             current.discountSelectionCustomized &&
             removedFromSelectedTargets.isNotEmpty() &&
             remainingSelectedTargets.isEmpty() &&
@@ -1627,20 +1731,35 @@ class MixVendasShellViewModel(
         val originalQuantities = calc.items.associate { it.productId to it.quantity }
         if (form.selectedQuantities.filterValues { it > 0 } != originalQuantities) return false
 
-        if (form.finalAmountInput.isBlank()) return false
-        val parsedFinal = CurrencyFormatter.parseBrlToCents(form.finalAmountInput) ?: return false
-        if (parsedFinal != calc.finalAmount.rawCents) return false
+        val originalHadDiscount = calc.finalAmount.rawCents < calc.originalSubtotal.rawCents
+        if (form.applyDiscountEnabled != originalHadDiscount) return false
 
-        val hasDiscount = parsedFinal < calc.originalSubtotal.rawCents
-        if (hasDiscount) {
+        if (form.applyDiscountEnabled) {
+            if (form.finalAmountInput.isBlank()) return false
+            val parsedFinal = CurrencyFormatter.parseBrlToCents(form.finalAmountInput) ?: return false
+            if (parsedFinal != calc.finalAmount.rawCents) return false
+        }
+
+        if (originalHadDiscount) {
             if (form.isDiscountTargetMissing) return false
             val originalTargetIds = SaleDiscountPolicy.selectedProductIdsFromSnapshot(calc)
             if (form.effectiveDiscountSelectedProductIds() != originalTargetIds) return false
-            val originalProtectedIds = SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(
+            val originalRecipientsByProduct = SaleDiscountPolicy.inferDiscountRecipientsByProductFromSnapshot(
                 calc = calc,
                 selectedDiscountProductIds = originalTargetIds,
             )
-            if (form.discountProtectedPersonIds != originalProtectedIds) return false
+            val resolvedMap = resolvedProductsMap(form, latestActiveProducts)
+            val targetProducts = originalTargetIds.mapNotNull { resolvedMap[it] }
+            val currentForTargets = SaleDiscountPolicy.resolveEffectiveRecipientsByProduct(
+                mode = form.discountPeopleSelectionMode,
+                selectedDiscountProducts = targetProducts,
+                unifiedSelectedPersonIds = form.discountUnifiedSelectedPersonIds,
+                individualSelectedPeopleByProduct = form.discountSelectedPeopleByProduct,
+            )
+            val originalForTargets = originalTargetIds.associateWith { pid ->
+                originalRecipientsByProduct[pid].orEmpty()
+            }
+            if (currentForTargets != originalForTargets) return false
         }
 
         if (form.selectedMethod.toSalePaymentMethod() != calc.paymentMethod) return false
@@ -1704,20 +1823,36 @@ class MixVendasShellViewModel(
         } else {
             activeProductIds
         }
-        val nextMissingIds = if (activeProductIds.isEmpty() || nextSelectedDiscountIds.isNotEmpty()) {
+        val nextMissingIds = if (!form.applyDiscountEnabled || activeProductIds.isEmpty() || nextSelectedDiscountIds.isNotEmpty()) {
             emptySet()
         } else {
             form.discountMissingProductIds
         }
 
-        val selectedDiscountProducts = nextSelectedDiscountIds.mapNotNull { resolvedMap[it] }
-        val availablePeopleIds = SaleDiscountPolicy.collectPersonIdsInProducts(selectedDiscountProducts)
-        val fixedPeopleIds = SaleDiscountPolicy.detectFixedUnitSharePersonIds(selectedDiscountProducts)
+        val allCartParticipantIds = LinkedHashSet<String>()
+        val nextSelectedPeopleByProduct = LinkedHashMap<String, Set<String>>(activeProductIds.size)
+        activeProductIds.forEach { productId ->
+            val product = resolvedMap[productId] ?: return@forEach
+            val validParticipantIds = product.participants.mapTo(LinkedHashSet()) { it.personId }
+            allCartParticipantIds.addAll(validParticipantIds)
+            val existingSelection = form.discountSelectedPeopleByProduct[productId]
+            nextSelectedPeopleByProduct[productId] = if (existingSelection != null) {
+                existingSelection.intersect(validParticipantIds)
+            } else {
+                validParticipantIds
+            }
+        }
 
-        val cleanedUnprotectedFixed = form.discountUnprotectedFixedPersonIds.intersect(availablePeopleIds)
-        val cleanedProtected = form.discountProtectedPersonIds.intersect(availablePeopleIds)
-        val autoProtectedFixed = fixedPeopleIds - cleanedUnprotectedFixed
-        val nextProtectedPersonIds = cleanedProtected + autoProtectedFixed
+        val unifiedPoolIds = LinkedHashSet<String>()
+        nextSelectedDiscountIds.forEach { productId ->
+            val product = resolvedMap[productId] ?: return@forEach
+            product.participants.forEach { unifiedPoolIds.add(it.personId) }
+        }
+        val retainedUnifiedKnown = form.discountUnifiedKnownPersonIds.intersect(allCartParticipantIds)
+        val retainedUnifiedSelected = form.discountUnifiedSelectedPersonIds.intersect(retainedUnifiedKnown)
+        val newUnifiedPeople = unifiedPoolIds - retainedUnifiedKnown
+        val nextUnifiedSelected = (retainedUnifiedSelected + newUnifiedPeople).intersect(allCartParticipantIds)
+        val nextUnifiedKnown = retainedUnifiedKnown + unifiedPoolIds
 
         val validTarget = when {
             nextMissingIds.isNotEmpty() -> nextMissingIds.first()
@@ -1727,11 +1862,12 @@ class MixVendasShellViewModel(
         }
 
         val updatedSubtotalCents = computeSelectedSubtotalCents(filteredQuantities, resolvedMap)
-        val nextFinalInput = if (!form.finalAmountTouched) {
+        val nextFinalInput = if (!form.applyDiscountEnabled || !form.finalAmountTouched) {
             CurrencyFormatter.formatCentsForInput(updatedSubtotalCents)
         } else {
             form.finalAmountInput
         }
+        val nextFinalTouched = form.applyDiscountEnabled && form.finalAmountTouched
 
         val usesMachine = form.selectedMethod == PreviewPaymentMethod.DEBIT ||
             form.selectedMethod == PreviewPaymentMethod.CREDIT
@@ -1769,9 +1905,11 @@ class MixVendasShellViewModel(
             discountSelectedProductIds = nextSelectedDiscountIds,
             discountSelectionCustomized = nextCustomized,
             discountMissingProductIds = nextMissingIds,
-            discountProtectedPersonIds = nextProtectedPersonIds,
-            discountUnprotectedFixedPersonIds = cleanedUnprotectedFixed,
+            discountSelectedPeopleByProduct = nextSelectedPeopleByProduct,
+            discountUnifiedSelectedPersonIds = nextUnifiedSelected,
+            discountUnifiedKnownPersonIds = nextUnifiedKnown,
             finalAmountInput = nextFinalInput,
+            finalAmountTouched = nextFinalTouched,
             selectedMachineId = if (usesMachine) validMachine?.id else null,
             machinePickerOpen = if (usesMachine) form.machinePickerOpen else false,
             machinePickerSearchQuery = if (usesMachine) form.machinePickerSearchQuery else "",
@@ -2239,8 +2377,8 @@ class MixVendasShellViewModel(
         zoneId: ZoneId,
     ): List<PersistedSale> {
         val today = LocalDate.now(zoneId)
-        val fromParsed = parseOptionalIsoDate(fromDate)
-        val toParsed = parseOptionalIsoDate(toDate)
+        val fromParsed = parseOptionalFilterDate(fromDate)
+        val toParsed = parseOptionalFilterDate(toDate)
         return sales.filter { persisted ->
             val saleDate = DailySalesAggregator.toLocalDate(persisted.soldAtEpochMs, zoneId)
             matchesPeriodDate(saleDate, today, periodFilter, fromParsed, toParsed)
@@ -2258,8 +2396,8 @@ class MixVendasShellViewModel(
         val selectedDayRange = filter.selectedSalesDate?.let { selectedDate ->
             DailySalesAggregator.localDayEpochRange(selectedDate, zoneId)
         }
-        val fromParsed = parseOptionalIsoDate(filter.periodFromDate)
-        val toParsed = parseOptionalIsoDate(filter.periodToDate)
+        val fromParsed = parseOptionalFilterDate(filter.periodFromDate)
+        val toParsed = parseOptionalFilterDate(filter.periodToDate)
         val search = TextNormalization.normalizeForSearch(filter.salesSearchQuery)
 
         return sales.filter { persisted ->
@@ -2304,8 +2442,8 @@ class MixVendasShellViewModel(
         filter: FilterState,
     ): List<PreviewSale> {
         val today = LocalDate.now()
-        val fromParsed = parseOptionalIsoDate(filter.periodFromDate)
-        val toParsed = parseOptionalIsoDate(filter.periodToDate)
+        val fromParsed = parseOptionalFilterDate(filter.periodFromDate)
+        val toParsed = parseOptionalFilterDate(filter.periodToDate)
         val search = filter.salesSearchQuery.trim().lowercase(ptBrLocale)
 
         return sales.filter { sale ->
@@ -2361,11 +2499,8 @@ class MixVendasShellViewModel(
         SalePaymentMethod.CREDIT -> PreviewPaymentMethod.CREDIT
     }
 
-    private fun parseOptionalIsoDate(value: String): LocalDate? {
-        val trimmed = value.trim()
-        if (trimmed.isEmpty()) return null
-        return runCatching { LocalDate.parse(trimmed) }.getOrNull()
-    }
+    private fun parseOptionalFilterDate(value: String): LocalDate? =
+        CurrencyFormatter.parseFlexibleFilterDate(value)
 
     private class MutableRealPersonAcc(
         val personId: String,
@@ -2503,7 +2638,9 @@ class MixVendasShellViewModel(
                 originalSubtotalCents = MonetaryRounding.safeAdd(originalSubtotalCents, lineTotal)
             }
 
-            val finalAmountOverride: MoneyCents = if (form.finalAmountInput.isBlank()) {
+            val finalAmountOverride: MoneyCents = if (!form.applyDiscountEnabled) {
+                MoneyCents(originalSubtotalCents)
+            } else if (form.finalAmountInput.isBlank()) {
                 throw SaleCalculationException("Informe o valor final da venda.")
             } else {
                 val parsedCents = CurrencyFormatter.parseBrlToCents(form.finalAmountInput)
@@ -2520,7 +2657,7 @@ class MixVendasShellViewModel(
             }
 
             val effectiveFinalCents = finalAmountOverride.rawCents
-            val hasDiscount = effectiveFinalCents < originalSubtotalCents
+            val hasDiscount = form.applyDiscountEnabled && effectiveFinalCents < originalSubtotalCents
             val effectiveTargetIds = form.effectiveDiscountSelectedProductIds()
             val discountMode = if (hasDiscount) {
                 if (form.isDiscountTargetMissing && effectiveTargetIds.isEmpty()) {
@@ -2619,6 +2756,18 @@ class MixVendasShellViewModel(
                 null
             }
 
+            val selectedDiscountProducts = effectiveTargetIds.mapNotNull { productMap[it] }
+            val resolvedRecipientsByProduct = if (hasDiscount) {
+                SaleDiscountPolicy.resolveEffectiveRecipientsByProduct(
+                    mode = form.discountPeopleSelectionMode,
+                    selectedDiscountProducts = selectedDiscountProducts,
+                    unifiedSelectedPersonIds = form.discountUnifiedSelectedPersonIds,
+                    individualSelectedPeopleByProduct = form.discountSelectedPeopleByProduct,
+                )
+            } else {
+                null
+            }
+
             return SaleCalculationInput(
                 items = itemInputs,
                 finalAmountOverride = finalAmountOverride,
@@ -2630,7 +2779,7 @@ class MixVendasShellViewModel(
                 manualRateOverrideBps = manualRateOverrideBps,
                 note = form.note,
                 cardBrandKey = cardBrandKey,
-                protectedDiscountPersonIds = if (hasDiscount) form.discountProtectedPersonIds else emptySet(),
+                discountRecipientPersonIdsByProduct = resolvedRecipientsByProduct,
             )
         }
 
@@ -2645,10 +2794,19 @@ class MixVendasShellViewModel(
                 .mapNotNull { (id, qty) -> productMap[id]?.let { it to qty } }
             val subtotalCents = computeSelectedSubtotalCents(form.selectedQuantities, productMap)
             val parsedFinal = parseBrlInputToCents(form.finalAmountInput)
-            val effectiveFinal = if (form.finalAmountInput.isBlank()) subtotalCents else (parsedFinal ?: subtotalCents)
-            val discountCents = (subtotalCents - effectiveFinal).coerceAtLeast(0L)
+            val effectiveFinal = if (!form.applyDiscountEnabled || form.finalAmountInput.isBlank()) {
+                subtotalCents
+            } else {
+                parsedFinal ?: subtotalCents
+            }
+            val discountCents = if (form.applyDiscountEnabled) {
+                (subtotalCents - effectiveFinal).coerceAtLeast(0L)
+            } else {
+                0L
+            }
             val preError = when {
                 selectedEntries.isEmpty() -> "Selecione pelo menos um produto."
+                !form.applyDiscountEnabled -> null
                 form.finalAmountInput.isBlank() -> if (form.finalAmountTouched) "Informe o valor final da venda." else null
                 parsedFinal == null -> "Valor final inválido (ex.: 95,00)."
                 parsedFinal <= 0L -> "O valor final da venda deve ser maior que zero."
@@ -2656,10 +2814,17 @@ class MixVendasShellViewModel(
                 else -> null
             }
             val effectiveTargetIds = form.effectiveDiscountSelectedProductIds()
+            val selectedDiscountProducts = effectiveTargetIds.mapNotNull { productMap[it] }
+            val effectivePeopleByProduct = SaleDiscountPolicy.resolveEffectiveRecipientsByProduct(
+                mode = form.discountPeopleSelectionMode,
+                selectedDiscountProducts = selectedDiscountProducts,
+                unifiedSelectedPersonIds = form.discountUnifiedSelectedPersonIds,
+                individualSelectedPeopleByProduct = form.discountSelectedPeopleByProduct,
+            )
             return SaleDiscountPolicy.buildPreview(
                 selectedEntries = selectedEntries,
                 discountSelectedProductIds = effectiveTargetIds,
-                protectedPersonIds = form.discountProtectedPersonIds,
+                selectedPeopleByProduct = effectivePeopleByProduct,
                 discountCents = discountCents,
                 calculationInputBuilder = {
                     val safeForm = if (form.finalAmountInput.isBlank() && subtotalCents > 0L) {
@@ -2668,7 +2833,7 @@ class MixVendasShellViewModel(
                         form
                     }
                     // Se o pagamento exigir maquininha mas o usuário ainda não escolheu uma,
-                    // calcula a prévia do desconto em Dinheiro (tarifa 0) para que a conferência de desconto
+                    // calcula a prévia do desconto em Pix (tarifa 0) para que a conferência de desconto
                     // continue visível em tempo real enquanto ele ajusta os produtos e pessoas!
                     val needsMachine = safeForm.selectedMethod == PreviewPaymentMethod.DEBIT ||
                         safeForm.selectedMethod == PreviewPaymentMethod.CREDIT

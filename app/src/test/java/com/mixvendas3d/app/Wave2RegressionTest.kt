@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
@@ -310,6 +311,12 @@ class Wave2RegressionTest {
         composeRule.onNodeWithTag("picker_checkbox_$prodBId").performClick()
         composeRule.onNodeWithTag("close_product_picker_button").performClick()
         waitForTagGone("product_picker_dialog")
+
+        // Por padrão, APLICAR DESCONTO inicia desmarcado e opções de desconto ficam ocultas
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().assertIsOff()
+        composeRule.onAllNodesWithTag("sale_final_value_input").assertCountEquals(0)
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
+        waitForTag("sale_final_value_input")
 
         // Valor inicial sincronizado = 100,00
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().assert(hasText("100,00"))

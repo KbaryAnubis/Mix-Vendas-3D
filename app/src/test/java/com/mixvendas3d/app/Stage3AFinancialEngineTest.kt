@@ -443,7 +443,7 @@ class Stage3AFinancialEngineTest {
         val card = machine(creditDefaultBps = 300)
 
         // A) Desconto específico de R$ 5,00 (final R$ 45,00) somente no Produto A
-        // Produto A cai para R$ 25,00 (2/3 e 1/3 -> 1667 e 833)
+        // Produto A cai para R$ 25,00 (desconto de 500 dividido igualmente: -250 cada -> 1750 e 750)
         // Produto B permanece R$ 20,00 (1000 e 1000)
         val specificRes = SaleFinancialEngine.calculate(
             SaleCalculationInput(
@@ -462,8 +462,8 @@ class Stage3AFinancialEngineTest {
         assertEquals(2_500L, itemASpec.finalAmount.rawCents)
         assertEquals(0L, itemBSpec.discountAmount.rawCents)
         assertEquals(2_000L, itemBSpec.finalAmount.rawCents)
-        assertEquals(1_667L, itemASpec.participantSplits.first { it.personId == "p1" }.grossAmount.rawCents)
-        assertEquals(833L, itemASpec.participantSplits.first { it.personId == "p2" }.grossAmount.rawCents)
+        assertEquals(1_750L, itemASpec.participantSplits.first { it.personId == "p1" }.grossAmount.rawCents)
+        assertEquals(750L, itemASpec.participantSplits.first { it.personId == "p2" }.grossAmount.rawCents)
 
         // B) Desconto proporcional com sobra de centavos: R$ 50,00 -> R$ 49,99 (1 cent de desconto)
         // Pesos 3000 e 2000: restos 3000 e 2000 -> prod-a absorve o 1 cent -> 2999 e 2000

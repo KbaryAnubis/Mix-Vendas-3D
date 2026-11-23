@@ -216,19 +216,31 @@ class Stage8B2CsvBackupRestoreIntegrationTest {
         assertEquals("100,00", anaRow[8])
         assertEquals("10,00", anaRow[9])
         assertEquals("90,00", anaRow[10])
+        // Desconto R$ 10,00 dividido igualmente entre Ana e Bruno (-R$ 5,00 cada):
+        // Ana: 60,00 -> 55,00 bruto; Bruno: 40,00 -> 35,00 bruto.
+        // Tarifa total 495 bps * 9000 / 10000 = 4,95 (495 centavos): 495*5500/9000 = 302.5 e 495*3500/9000 = 192.5,
+        // empate determinístico por personId -> um fica com 302/303 e o outro com 193/192, somando 495.
+        val anaTotal = saved.calculation.personTotals.first { it.personId == ana.id }
+        val brunoTotal = saved.calculation.personTotals.first { it.personId == bruno.id }
+        assertEquals(5_500L, anaTotal.grossAmount.rawCents)
+        assertEquals(3_500L, brunoTotal.grossAmount.rawCents)
+        assertTrue(anaTotal.feeAmount.rawCents in listOf(302L, 303L))
+        assertTrue(brunoTotal.feeAmount.rawCents in listOf(192L, 193L))
+        assertEquals(495L, anaTotal.feeAmount.rawCents + brunoTotal.feeAmount.rawCents)
+
         assertEquals("Ana CSV", anaRow[12])
-        assertEquals("54,00", anaRow[13])
-        assertEquals("2,97", anaRow[14])
-        assertEquals("51,03", anaRow[15])
+        assertEquals("55,00", anaRow[13])
+        assertEquals(com.mixvendas3d.app.util.CurrencyFormatter.formatCentsOrZeroForInput(anaTotal.feeAmount.rawCents), anaRow[14])
+        assertEquals(com.mixvendas3d.app.util.CurrencyFormatter.formatCentsOrZeroForInput(anaTotal.netAmount.rawCents), anaRow[15])
         assertEquals("5,50%", anaRow[20])
         assertEquals("4,95", anaRow[21])
         assertEquals(FeeResponsibilityMode.PROPORTIONAL.label, anaRow[22])
 
         val brunoRow = detailedLines.drop(1).first { it[11] == bruno.id }
         assertEquals("Bruno CSV", brunoRow[12])
-        assertEquals("36,00", brunoRow[13])
-        assertEquals("1,98", brunoRow[14])
-        assertEquals("34,02", brunoRow[15])
+        assertEquals("35,00", brunoRow[13])
+        assertEquals(com.mixvendas3d.app.util.CurrencyFormatter.formatCentsOrZeroForInput(brunoTotal.feeAmount.rawCents), brunoRow[14])
+        assertEquals(com.mixvendas3d.app.util.CurrencyFormatter.formatCentsOrZeroForInput(brunoTotal.netAmount.rawCents), brunoRow[15])
     }
 
     @Test

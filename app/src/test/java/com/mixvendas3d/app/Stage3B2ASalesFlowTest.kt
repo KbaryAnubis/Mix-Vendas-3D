@@ -540,6 +540,10 @@ class Stage3B2ASalesFlowTest {
 
         // 1) Desconto proporcional (R$ 100,00 -> R$ 80,00 => -12,00 em Alfa, -8,00 em Beta)
         selectProductsInVender(listOf(prodAId to 0, prodBId to 0))
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("sale_final_value_input").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("80,00")
         waitUiUntil {
             composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
@@ -558,6 +562,10 @@ class Stage3B2ASalesFlowTest {
 
         // 2) Desconto específico em Produto Beta (R$ 100,00 -> R$ 85,00 => -15,00 só em Beta)
         selectProductsInVender(listOf(prodAId to 0, prodBId to 0))
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("sale_final_value_input").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("85,00")
         waitUiUntil {
             composeRule.onAllNodesWithTag("discount_products_box").fetchSemanticsNodes().isNotEmpty()
@@ -645,6 +653,10 @@ class Stage3B2ASalesFlowTest {
         // B) Selecionar produtos, preencher observação e tentar desconto inválido (> subtotal)
         selectProductsInVender(listOf(prodAId to 0, prodBId to 0))
         composeRule.onNodeWithTag("sale_note_input").performScrollTo().performTextInput("Obs preservada")
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("sale_final_value_input").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("120,00")
         waitUiUntil {
             composeRule.onAllNodesWithTag("vender_final_amount_error", useUnmergedTree = true)

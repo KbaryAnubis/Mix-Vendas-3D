@@ -53,7 +53,7 @@ data class SaleCalculationInput(
     val manualRateOverrideBps: Int? = null,
     val note: String = "",
     val cardBrandKey: String? = null,
-    val protectedDiscountPersonIds: Set<String> = emptySet(),
+    val discountRecipientPersonIdsByProduct: Map<String, Set<String>>? = null,
 ) {
     fun resolvedCardBrandKey(): String? = cardBrandKey ?: cardBrand?.storageKey
 }
@@ -174,7 +174,7 @@ data class PersistedSale(
         overrideManualRateOverrideBps: Int? = calculation.machineSnapshot?.manualRateOverrideBps,
         overrideNote: String? = null,
         overrideCardBrandKey: String? = null,
-        overrideProtectedDiscountPersonIds: Set<String>? = null,
+        overrideDiscountRecipientPersonIdsByProduct: Map<String, Set<String>>? = null,
     ): SaleCalculationInput {
         val resolvedMethod = overridePaymentMethod ?: calculation.paymentMethod
         val resolvedDiscountMode = overrideDiscountMode ?: when (val config = calculation.discountConfig) {
@@ -182,8 +182,9 @@ data class PersistedSale(
             is SaleDiscountConfigSnapshot.SpecificProduct -> SaleDiscountInput.SpecificProduct(config.productId)
             is SaleDiscountConfigSnapshot.SelectedProducts -> SaleDiscountInput.SelectedProducts(config.productIds.toSet())
         }
-        val resolvedProtectedIds = overrideProtectedDiscountPersonIds
-            ?: com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy.inferProtectedPersonIdsFromSnapshot(calculation)
+        val resolvedRecipientsByProduct = overrideDiscountRecipientPersonIdsByProduct
+            ?: com.mixvendas3d.app.domain.calculation.SaleDiscountPolicy
+                .inferDiscountRecipientsByProductFromSnapshot(calculation)
         val resolvedMachine = if (resolvedMethod.usesMachine) {
             overrideMachine ?: calculation.machineSnapshot?.toSnapshotMachine(
                 paymentMethod = resolvedMethod,
@@ -213,7 +214,7 @@ data class PersistedSale(
             manualRateOverrideBps = overrideManualRateOverrideBps,
             note = overrideNote ?: calculation.note,
             cardBrandKey = resolvedBrandKey,
-            protectedDiscountPersonIds = resolvedProtectedIds,
+            discountRecipientPersonIdsByProduct = resolvedRecipientsByProduct,
         )
     }
 }

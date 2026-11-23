@@ -120,6 +120,7 @@ class Stage4B1HomeRealDataTest {
         machineId: String? = null,
         cardBrand: CardBrand? = null,
         installments: Int? = null,
+        discountRecipientPersonIdsByProduct: Map<String, Set<String>>? = null,
         note: String = "",
     ): String {
         val machine = if (machineId != null) {
@@ -141,6 +142,7 @@ class Stage4B1HomeRealDataTest {
                 machine = machine,
                 cardBrand = cardBrand,
                 installments = installments,
+                discountRecipientPersonIdsByProduct = discountRecipientPersonIdsByProduct,
                 note = note,
             ),
         )
@@ -330,11 +332,11 @@ class Stage4B1HomeRealDataTest {
             )
 
             // Venda 1: Prod 1 (100,00) + Prod 2 (100,00) -> subtotal 200,00
-            // Desconto específico de 20,00 em Prod 2 -> final 180,00 (Prod 1 = 100,00, Prod 2 = 80,00)
+            // Desconto específico de 20,00 em Prod 2 aplicado somente em Bruno -> final 180,00 (Prod 1 = 100,00, Prod 2 = 80,00)
             // Crédito 5,00%:
             //   Prod 1: bruto 100,00, taxa 5,00 (100% Ana), líq 95,00 -> Ana 75,00, Bruno 20,00
-            //   Prod 2: bruto 80,00 (Ana 8,00, Bruno 72,00), taxa 4,00 (EQUAL -> Ana 2,00, Bruno 2,00) -> Ana 6,00, Bruno 70,00
-            //   Total Venda 1: bruto 180,00, taxa 9,00, líq 171,00 -> Ana 81,00, Bruno 90,00
+            //   Prod 2: bruto 80,00 (Ana 10,00 sem desconto, Bruno 70,00), taxa 4,00 (EQUAL -> Ana 2,00, Bruno 2,00) -> Ana 8,00, Bruno 68,00
+            //   Total Venda 1: bruto 180,00, taxa 9,00, líq 171,00 -> Ana 83,00, Bruno 88,00
             insertRealSaleAt(
                 app = app,
                 epochMs = nowMs,
@@ -345,10 +347,11 @@ class Stage4B1HomeRealDataTest {
                 machineId = mach.id,
                 cardBrand = CardBrand.VISA,
                 installments = 1,
+                discountRecipientPersonIdsByProduct = mapOf(prod2.id to setOf(bruno.id)),
             )
 
-            // Venda 2: Prod 3 (100,00) com desconto proporcional para 50,00 no Débito 2,00%
-            //   Bruto 50,00 (Carla 30,00, Diego 20,00), taxa 1,00 (Carla 0,60, Diego 0,40), líq 49,00 -> Carla 29,40, Diego 19,60
+            // Venda 2: Prod 3 (100,00) com desconto de 50,00 dividido igualmente (25,00 cada) no Débito 2,00%
+            //   Bruto 50,00 (Carla 35,00, Diego 15,00), taxa 1,00 (Carla 0,70, Diego 0,30), líq 49,00 -> Carla 34,30, Diego 14,70
             insertRealSaleAt(
                 app = app,
                 epochMs = nowMs + 60_000L,
@@ -392,7 +395,7 @@ class Stage4B1HomeRealDataTest {
         val (anaId, brunoId, carlaId, diegoId) = setup
 
         // Totais esperados preservados: Bruto 230,00 | Tarifas 10,00 | Líquido 220,00
-        // Pessoas: Ana Paula 81,00 | Bruno 90,00 | Carla 29,40 | Diego 19,60 (soma = 220,00)
+        // Pessoas: Ana Paula 83,00 | Bruno 88,00 | Carla 34,30 | Diego 14,70 (soma = 220,00)
         waitUiUntil {
             composeRule.onAllNodesWithText("R$ 230,00", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -408,12 +411,12 @@ class Stage4B1HomeRealDataTest {
         composeRule.onNodeWithTag("home_person_card_$anaId")
             .assertTextContains("Ana Paula", substring = true)
             .assertTextContains("1 venda", substring = true)
-            .assertTextContains("R$ 81,00", substring = true)
+            .assertTextContains("R$ 83,00", substring = true)
         scrollHomeToTag("home_person_card_$brunoId")
         composeRule.onNodeWithTag("home_person_card_$brunoId")
             .assertTextContains("Bruno", substring = true)
             .assertTextContains("1 venda", substring = true)
-            .assertTextContains("R$ 90,00", substring = true)
+            .assertTextContains("R$ 88,00", substring = true)
         composeRule.onAllNodesWithTag("home_person_card_$carlaId").assertCountEquals(0)
         composeRule.onAllNodesWithTag("home_person_card_$diegoId").assertCountEquals(0)
 
@@ -428,12 +431,12 @@ class Stage4B1HomeRealDataTest {
         composeRule.onNodeWithTag("home_person_card_$carlaId")
             .assertTextContains("Carla", substring = true)
             .assertTextContains("1 venda", substring = true)
-            .assertTextContains("R$ 29,40", substring = true)
+            .assertTextContains("R$ 34,30", substring = true)
         scrollHomeToTag("home_person_card_$diegoId")
         composeRule.onNodeWithTag("home_person_card_$diegoId")
             .assertTextContains("Diego", substring = true)
             .assertTextContains("1 venda", substring = true)
-            .assertTextContains("R$ 19,60", substring = true)
+            .assertTextContains("R$ 14,70", substring = true)
     }
 
     @Test

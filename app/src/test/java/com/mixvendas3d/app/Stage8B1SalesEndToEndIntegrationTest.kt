@@ -296,6 +296,7 @@ class Stage8B1SalesEndToEndIntegrationTest {
 
         // 2x Dragão (120,00) + 1x Vaso (40,00) = Subtotal 160,00
         composeRule.onNodeWithTag("selected_inc_$prodAId").performScrollTo().performClick()
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
         waitUiUntil {
             runCatching {
                 composeRule.onNodeWithTag("sale_final_value_input").assertTextContains("160,00")
@@ -520,6 +521,10 @@ class Stage8B1SalesEndToEndIntegrationTest {
 
         // Desconto proporcional para R$ 220,00 (Caneca 176,00 [Ana], Chaveiro 44,00 [Bruno])
         // Muda pagamento para Débito Stone Pro 2,00% -> Taxa R$ 4,40 (Ana 3,52, Bruno 0,88), Líq R$ 215,60
+        composeRule.onNodeWithTag("apply_discount_checkbox").performScrollTo().performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("sale_final_value_input").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("220,00")
         composeRule.onNodeWithTag("sale_note_input").performScrollTo().performTextReplacement("Editada fim a fim")
         composeRule.onNodeWithTag("pay_method_debit").performScrollTo().performClick()

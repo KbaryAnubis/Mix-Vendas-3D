@@ -10,8 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,24 +23,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,8 +52,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mixvendas3d.app.domain.calculation.DiscountPeopleSelectionMode
 import com.mixvendas3d.app.domain.calculation.DiscountPreviewPersonLine
-import com.mixvendas3d.app.domain.calculation.DiscountSelectablePersonItem
+import com.mixvendas3d.app.domain.calculation.DiscountProductPeopleGroup
+import com.mixvendas3d.app.domain.calculation.DiscountUnifiedPersonOption
 import com.mixvendas3d.app.domain.calculation.MonetaryRounding
 import com.mixvendas3d.app.domain.calculation.VenderDiscountPreview
 import com.mixvendas3d.app.domain.models.MoneyCents
@@ -74,14 +71,11 @@ import com.mixvendas3d.app.ui.theme.V19ErrorContainer
 import com.mixvendas3d.app.ui.theme.V19ErrorSoft
 import com.mixvendas3d.app.ui.theme.V19GoldAccent
 import com.mixvendas3d.app.ui.theme.V19InkMuted
-import com.mixvendas3d.app.ui.theme.V19InkPrimary
 import com.mixvendas3d.app.ui.theme.V19MintSuccess
-import com.mixvendas3d.app.ui.theme.V19PurpleButtonStart
 import com.mixvendas3d.app.ui.theme.V19PurplePrimary
 import com.mixvendas3d.app.ui.theme.V19PurpleSoftText
 import com.mixvendas3d.app.ui.theme.V19SuccessContainer
 import com.mixvendas3d.app.ui.theme.V19SuccessInk
-import com.mixvendas3d.app.ui.theme.V19SurfaceCard
 import com.mixvendas3d.app.util.CurrencyFormatter
 
 /**
@@ -376,51 +370,415 @@ fun DiscountProductsSelectionBox(
 }
 
 /**
- * Caixa 2 — Caixa recolhível independente para selecionar as pessoas que NÃO receberão desconto.
- * Exibe todas as pessoas únicas participantes dos produtos selecionados na Caixa 1 e protege
- * automaticamente a remuneração fixa por unidade (R$ 5,00/un), exigindo autorização explícita para reduzi-la.
+ * Seletor do modo de escolha das pessoas que receberão o desconto:
+ * - UNIFICADA: lista única sem repetições aplicada apenas aos produtos selecionados em que cada pessoa participa.
+ * - INDIVIDUAL POR PRODUTO: seleção independente em cada produto marcado para desconto.
  */
 @Composable
-fun DiscountProtectedPeopleBox(
-    selectablePeople: List<DiscountSelectablePersonItem>,
-    onToggleProtectedPerson: (String) -> Unit,
-    onAuthorizeUnprotectFixedPerson: (String) -> Unit,
+fun DiscountPeopleModeSelector(
+    selectedMode: DiscountPeopleSelectionMode,
+    onModeSelected: (DiscountPeopleSelectionMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("discount_mode_selector"),
+        shape = RoundedCornerShape(16.dp),
+        color = GlassInnerBoxBg,
+        border = BorderStroke(1.1.dp, GlassNeonBorder15),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Modo de seleção de pessoas",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                )
+                Text(
+                    text = if (selectedMode == DiscountPeopleSelectionMode.UNIFIED) {
+                        "Lista única sem repetições para todos os produtos selecionados."
+                    } else {
+                        "Escolha independente das pessoas em cada produto selecionado."
+                    },
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = HomeCardLabelInk.copy(alpha = 0.85f),
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DiscountModeOptionRow(
+                    title = "UNIFICADA",
+                    subtitle = "Marca ou desmarca cada pessoa uma única vez",
+                    selected = selectedMode == DiscountPeopleSelectionMode.UNIFIED,
+                    onClick = { onModeSelected(DiscountPeopleSelectionMode.UNIFIED) },
+                    rowTag = "discount_mode_unified",
+                )
+                DiscountModeOptionRow(
+                    title = "INDIVIDUAL POR PRODUTO",
+                    subtitle = "Define as pessoas separadamente em cada produto",
+                    selected = selectedMode == DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT,
+                    onClick = { onModeSelected(DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT) },
+                    rowTag = "discount_mode_individual",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscountModeOptionRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    rowTag: String,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .testTag(rowTag),
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(
+            width = if (selected) 1.3.dp else 1.dp,
+            color = if (selected) HomeCtaBorderGlow.copy(alpha = 0.82f) else GlassNeonBorder15,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .background(
+                    if (selected) {
+                        Brush.verticalGradient(listOf(Color(0xD9391A66), Color(0xCC240D43)))
+                    } else {
+                        Brush.verticalGradient(listOf(Color(0x99160A2B), Color(0x99120822)))
+                    },
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = onClick,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = V19GoldAccent,
+                    unselectedColor = HomeCardNeonBorder.copy(alpha = 0.75f),
+                ),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = title,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp,
+                    color = if (selected) Color.White else HomeCardLabelInk,
+                )
+                Text(
+                    text = subtitle,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                    color = HomeCardLabelInk.copy(alpha = 0.85f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Caixa 2 (Modo UNIFICADA) — Lista única sem repetições reunindo todos os participantes dos produtos
+ * selecionados para desconto. Ao marcar/desmarcar uma pessoa, aplica apenas nos produtos
+ * selecionados em que ela participa.
+ */
+@Composable
+fun DiscountUnifiedPeopleBox(
+    unifiedOptions: List<DiscountUnifiedPersonOption>,
+    missingPeopleProductNames: List<String>,
+    discountCents: Long,
+    hasProductsInSale: Boolean,
+    hasSelectedDiscountProducts: Boolean,
+    onTogglePerson: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedCount = unifiedOptions.count { it.isSelected }
+    val hasMissingWarning = missingPeopleProductNames.isNotEmpty() && hasSelectedDiscountProducts
+    val highlightError = discountCents > 0L && hasMissingWarning
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("discount_unified_people_box"),
+        shape = RoundedCornerShape(16.dp),
+        color = GlassInnerBoxBg,
+        border = BorderStroke(
+            width = if (highlightError) 1.5.dp else 1.1.dp,
+            color = when {
+                highlightError -> V19ErrorSoft
+                unifiedOptions.isNotEmpty() -> HomeCardNeonBorder.copy(alpha = 0.65f)
+                else -> GlassNeonBorder15
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = if (highlightError) V19ErrorSoft else V19PurpleSoftText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "PESSOAS QUE RECEBERÃO O DESCONTO",
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = "Modo unificado · Aplica-se somente aos produtos marcados em que cada pessoa participa.",
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = HomeCardLabelInk.copy(alpha = 0.85f),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                DiscountStatusPill(
+                    text = "$selectedCount de ${unifiedOptions.size}",
+                    backgroundColor = if (highlightError) V19ErrorContainer else Color(0xFF33185E),
+                    borderColor = if (highlightError) V19ErrorSoft.copy(alpha = 0.78f) else HomeCardNeonBorder.copy(alpha = 0.70f),
+                    textColor = if (highlightError) V19ErrorSoft else V19PurpleSoftText,
+                    modifier = Modifier.testTag("discount_unified_count"),
+                )
+            }
+
+            if (hasMissingWarning) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("discount_unified_missing_people_warning"),
+                    shape = RoundedCornerShape(12.dp),
+                    color = V19ErrorContainer,
+                    border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.72f)),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = V19ErrorSoft,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = "Selecione pelo menos uma pessoa para: ${missingPeopleProductNames.joinToString(", ")}.",
+                            fontFamily = PlusJakartaSansFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = V19ErrorSoft,
+                        )
+                    }
+                }
+            }
+
+            if (unifiedOptions.isEmpty()) {
+                Text(
+                    text = if (!hasProductsInSale) {
+                        "Adicione produtos à venda e marque ao menos um item acima para listar as pessoas participantes."
+                    } else {
+                        "Nenhum produto selecionado para desconto. Marque os produtos acima para exibir as pessoas."
+                    },
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = HomeCardLabelInk.copy(alpha = 0.82f),
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("discount_unified_people_empty"),
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    unifiedOptions.forEach { person ->
+                        val rowShape = RoundedCornerShape(12.dp)
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(rowShape)
+                                .clickable(
+                                    role = Role.Checkbox,
+                                    onClick = { onTogglePerson(person.personId) },
+                                )
+                                .testTag("discount_unified_person_row_${person.personId}"),
+                            shape = rowShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(
+                                width = if (person.isSelected) 1.2.dp else 1.dp,
+                                color = if (person.isSelected) {
+                                    HomeCtaBorderGlow.copy(alpha = 0.76f)
+                                } else {
+                                    GlassNeonBorder15
+                                },
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .background(
+                                        if (person.isSelected) {
+                                            Brush.verticalGradient(listOf(Color(0xD9391A66), Color(0xCC240D43)))
+                                        } else {
+                                            Brush.verticalGradient(listOf(Color(0x99160A2B), Color(0x99120822)))
+                                        },
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Checkbox(
+                                    checked = person.isSelected,
+                                    onCheckedChange = { onTogglePerson(person.personId) },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = V19PurplePrimary,
+                                        uncheckedColor = HomeCardNeonBorder.copy(alpha = 0.75f),
+                                        checkmarkColor = Color.White,
+                                    ),
+                                    modifier = Modifier.testTag(
+                                        "discount_unified_person_checkbox_${person.personId}",
+                                    ),
+                                )
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        text = person.personName,
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = if (person.isSelected) Color.White else HomeCardLabelInk,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = "Produtos: ${person.participatingProductNames.joinToString(", ")} · Original: ${CurrencyFormatter.formatBrl(person.totalOriginalSubtotal)}",
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
+                                        color = HomeCardLabelInk.copy(alpha = 0.88f),
+                                    )
+                                    if (person.isSelected) {
+                                        Text(
+                                            text = "Recebe desconto nos produtos participantes",
+                                            fontFamily = PlusJakartaSansFontFamily,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 11.sp,
+                                            color = V19GoldAccent,
+                                        )
+                                    } else {
+                                        DiscountStatusPill(
+                                            text = "Sem desconto — mantém 100%",
+                                            backgroundColor = V19SuccessContainer,
+                                            borderColor = V19MintSuccess.copy(alpha = 0.70f),
+                                            textColor = V19SuccessInk,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Caixa 2 (Modo INDIVIDUAL POR PRODUTO) — Caixa recolhível independente para selecionar, por produto,
+ * as pessoas que RECEBERÃO o desconto. O desconto de cada produto é dividido igualmente apenas entre
+ * as pessoas marcadas naquele produto. Pessoas desmarcadas mantêm 100% do valor original.
+ */
+@Composable
+fun DiscountRecipientPeopleBox(
+    productGroups: List<DiscountProductPeopleGroup>,
+    discountCents: Long,
+    onTogglePersonForProduct: (String, String) -> Unit,
     modifier: Modifier = Modifier,
     hasProductsInSale: Boolean = true,
+    initialExpanded: Boolean = false,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var pendingFixedUnprotectPerson by remember { mutableStateOf<DiscountSelectablePersonItem?>(null) }
+    var expanded by rememberSaveable { mutableStateOf(initialExpanded) }
 
-    val protectedCount = selectablePeople.count { it.isProtected }
-    val protectedFixedCount = selectablePeople.count { it.isProtected && it.isFixedUnitProtectedByDefault }
+    val hasAnyEmptyGroup = discountCents > 0L && productGroups.any { it.selectedCount == 0 }
+    val totalSelectedAcrossGroups = productGroups.sumOf { it.selectedCount }
 
     val subtitleText = when {
         !hasProductsInSale ->
-            "Adicione produtos à venda para listar as pessoas participantes"
-        selectablePeople.isEmpty() ->
-            "Marque ao menos um produto acima para listar as pessoas participantes"
-        protectedCount == 0 ->
-            "Nenhuma pessoa protegida · Toque para ${if (expanded) "fechar" else "abrir"}"
-        protectedFixedCount > 0 ->
-            "$protectedCount pessoa(s) protegida(s) (inclui valor fixo R$ 5,00/un) · Toque para ${if (expanded) "fechar" else "abrir"}"
+            "Adicione produtos à venda para listar as pessoas por produto"
+        productGroups.isEmpty() ->
+            "Marque ao menos um produto acima para escolher quem receberá o desconto"
+        hasAnyEmptyGroup ->
+            "Atenção: há produto sem pessoa selecionada · Toque para ${if (expanded) "fechar" else "abrir"}"
         else ->
-            "$protectedCount pessoa(s) protegida(s) contra desconto · Toque para ${if (expanded) "fechar" else "abrir"}"
+            "$totalSelectedAcrossGroups seleção(ões) em ${productGroups.size} produto(s) · Divisão igual · Toque para ${if (expanded) "fechar" else "abrir"}"
     }
 
     val boxShape = RoundedCornerShape(16.dp)
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .testTag("discount_protected_people_box"),
+            .testTag("discount_recipient_people_box"),
         shape = boxShape,
         color = GlassInnerBoxBg,
         border = BorderStroke(
-            width = if (protectedCount > 0) 1.3.dp else 1.1.dp,
-            color = if (protectedCount > 0) V19GoldAccent.copy(alpha = 0.72f) else GlassNeonBorder15,
+            width = if (hasAnyEmptyGroup) 1.5.dp else 1.1.dp,
+            color = when {
+                hasAnyEmptyGroup -> V19ErrorSoft
+                productGroups.isNotEmpty() -> HomeCardNeonBorder.copy(alpha = 0.65f)
+                else -> GlassNeonBorder15
+            },
         ),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Cabeçalho clicável que abre/fecha a caixa
+            // Cabeçalho clicável que abre/fecha a caixa recolhível
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -431,14 +789,14 @@ fun DiscountProtectedPeopleBox(
                         onClick = { expanded = !expanded },
                     )
                     .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .testTag("discount_protected_people_header"),
+                    .testTag("discount_recipient_people_header"),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Shield,
+                    imageVector = Icons.Filled.Group,
                     contentDescription = null,
-                    tint = if (protectedCount > 0) V19GoldAccent else V19PurpleSoftText,
+                    tint = if (hasAnyEmptyGroup) V19ErrorSoft else V19PurpleSoftText,
                     modifier = Modifier.size(22.dp),
                 )
                 Column(
@@ -446,7 +804,7 @@ fun DiscountProtectedPeopleBox(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = "PESSOAS QUE NÃO RECEBERÃO O DESCONTO",
+                        text = "PESSOAS QUE RECEBERÃO O DESCONTO",
                         fontFamily = PlusJakartaSansFontFamily,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 13.sp,
@@ -458,15 +816,15 @@ fun DiscountProtectedPeopleBox(
                         fontFamily = PlusJakartaSansFontFamily,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
-                        color = if (protectedCount > 0) V19GoldAccent else HomeCardLabelInk.copy(alpha = 0.85f),
+                        color = if (hasAnyEmptyGroup) V19ErrorSoft else HomeCardLabelInk.copy(alpha = 0.85f),
                     )
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = if (expanded) {
-                        "Recolher pessoas que não receberão o desconto"
+                        "Recolher pessoas que receberão o desconto"
                     } else {
-                        "Expandir pessoas que não receberão o desconto"
+                        "Expandir pessoas que receberão o desconto"
                     },
                     tint = V19PurpleSoftText,
                     modifier = Modifier.size(24.dp),
@@ -482,16 +840,16 @@ fun DiscountProtectedPeopleBox(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.30f))
 
-                    if (selectablePeople.isEmpty()) {
+                    if (productGroups.isEmpty()) {
                         Text(
                             text = if (!hasProductsInSale) {
-                                "Adicione produtos à venda e marque ao menos um item acima para escolher quem não receberá o desconto."
+                                "Adicione produtos à venda e marque ao menos um item acima para escolher as pessoas que receberão o desconto."
                             } else {
-                                "Nenhum produto selecionado para desconto. Marque os produtos acima para exibir as pessoas participantes."
+                                "Nenhum produto selecionado para desconto. Marque os produtos acima para exibir as pessoas de cada produto."
                             },
                             fontFamily = PlusJakartaSansFontFamily,
                             fontSize = 12.sp,
@@ -499,124 +857,208 @@ fun DiscountProtectedPeopleBox(
                             color = HomeCardLabelInk.copy(alpha = 0.82f),
                             modifier = Modifier
                                 .padding(vertical = 4.dp)
-                                .testTag("discount_protected_people_empty"),
+                                .testTag("discount_recipient_people_empty"),
                         )
                     } else {
                         Text(
-                            text = "Pessoas marcadas mantêm 100% da sua participação original em todos os produtos selecionados. O desconto será absorvido apenas pelas demais.",
+                            text = "Marque as pessoas que receberão o desconto em cada produto. O desconto do produto é dividido igualmente apenas entre as selecionadas.",
                             fontFamily = PlusJakartaSansFontFamily,
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
                             color = HomeCardLabelInk.copy(alpha = 0.85f),
                         )
 
-                        selectablePeople.forEach { person ->
-                            val rowShape = RoundedCornerShape(14.dp)
-                            val handleToggle: () -> Unit = {
-                                if (person.isProtected && person.isFixedUnitProtectedByDefault) {
-                                    pendingFixedUnprotectPerson = person
-                                } else {
-                                    onToggleProtectedPerson(person.personId)
-                                }
-                            }
-
+                        productGroups.forEach { group ->
+                            val groupMissingRecipients = discountCents > 0L && group.selectedCount == 0
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(rowShape)
-                                    .clickable(
-                                        role = Role.Checkbox,
-                                        onClick = handleToggle,
-                                    )
-                                    .testTag("discount_protected_person_row_${person.personId}"),
-                                shape = rowShape,
-                                color = Color.Transparent,
+                                    .testTag("discount_recipient_product_group_${group.productId}"),
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0x991C0C36),
                                 border = BorderStroke(
-                                    width = if (person.isProtected) 1.3.dp else 1.dp,
-                                    color = if (person.isProtected) {
-                                        V19GoldAccent.copy(alpha = 0.78f)
+                                    width = if (groupMissingRecipients) 1.4.dp else 1.dp,
+                                    color = if (groupMissingRecipients) {
+                                        V19ErrorSoft.copy(alpha = 0.85f)
                                     } else {
                                         GlassNeonBorder15
                                     },
                                 ),
                             ) {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(min = 52.dp)
-                                        .background(
-                                            if (person.isProtected) {
-                                                Brush.verticalGradient(listOf(Color(0xD93C2716), Color(0xCC24150E)))
-                                            } else {
-                                                Brush.verticalGradient(listOf(Color(0x99160A2B), Color(0x99120822)))
-                                            },
-                                        )
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Checkbox(
-                                        checked = person.isProtected,
-                                        onCheckedChange = { handleToggle() },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = V19GoldAccent,
-                                            uncheckedColor = HomeCardNeonBorder.copy(alpha = 0.75f),
-                                            checkmarkColor = Color(0xFF1A0A2E),
-                                        ),
-                                        modifier = Modifier.testTag("discount_protected_person_checkbox_${person.personId}"),
-                                    )
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(
-                                            text = person.personName,
-                                            fontFamily = PlusJakartaSansFontFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = Color.White,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Text(
+                                                text = "${group.quantity}× ${group.productName}",
+                                                fontFamily = PlusJakartaSansFontFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = Color.White,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                text = "Subtotal do item: ${CurrencyFormatter.formatBrl(group.originalSubtotal)}",
+                                                fontFamily = PlusJakartaSansFontFamily,
+                                                fontSize = 12.sp,
+                                                color = HomeCardLabelInk.copy(alpha = 0.88f),
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        DiscountStatusPill(
+                                            text = "${group.selectedCount} de ${group.totalCount} selecionada(s)",
+                                            backgroundColor = if (group.selectedCount == 0) {
+                                                V19ErrorContainer
+                                            } else {
+                                                Color(0xFF33185E)
+                                            },
+                                            borderColor = if (group.selectedCount == 0) {
+                                                V19ErrorSoft.copy(alpha = 0.78f)
+                                            } else {
+                                                HomeCardNeonBorder.copy(alpha = 0.70f)
+                                            },
+                                            textColor = if (group.selectedCount == 0) V19ErrorSoft else V19PurpleSoftText,
+                                            modifier = Modifier.testTag("discount_recipient_group_count_${group.productId}"),
                                         )
-                                        Text(
-                                            text = person.participationSummary,
-                                            fontFamily = PlusJakartaSansFontFamily,
-                                            fontSize = 12.sp,
-                                            lineHeight = 16.sp,
-                                            color = HomeCardLabelInk.copy(alpha = 0.90f),
-                                        )
-                                        when {
-                                            person.isFixedUnitProtectedByDefault && person.isProtected -> {
-                                                DiscountStatusPill(
-                                                    text = "Valor fixo (R$ 5,00/un) · Protegida por padrão",
-                                                    backgroundColor = Color(0xFF473114),
-                                                    borderColor = V19GoldAccent.copy(alpha = 0.80f),
-                                                    textColor = V19GoldAccent,
+                                    }
+
+                                    if (group.selectedCount == 0) {
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("discount_recipient_no_people_warning_${group.productId}"),
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = V19ErrorContainer,
+                                            border = BorderStroke(1.dp, V19ErrorSoft.copy(alpha = 0.72f)),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Warning,
+                                                    contentDescription = null,
+                                                    tint = V19ErrorSoft,
+                                                    modifier = Modifier.size(16.dp),
                                                 )
-                                            }
-                                            person.isFixedUnitProtectedByDefault && person.isFixedReductionAuthorized -> {
-                                                DiscountStatusPill(
-                                                    text = "Valor fixo (R$ 5,00/un) · Redução autorizada",
-                                                    backgroundColor = V19ErrorContainer,
-                                                    borderColor = V19ErrorSoft.copy(alpha = 0.75f),
-                                                    textColor = V19ErrorSoft,
-                                                )
-                                            }
-                                            person.isProtected -> {
-                                                DiscountStatusPill(
-                                                    text = "Protegida — não recebe desconto",
-                                                    backgroundColor = V19SuccessContainer,
-                                                    borderColor = V19MintSuccess.copy(alpha = 0.70f),
-                                                    textColor = V19SuccessInk,
-                                                )
-                                            }
-                                            else -> {
                                                 Text(
-                                                    text = "Recebe desconto conforme regra do produto",
+                                                    text = "Selecione pelo menos uma pessoa para receber o desconto em \"${group.productName}\".",
                                                     fontFamily = PlusJakartaSansFontFamily,
-                                                    fontSize = 11.sp,
-                                                    color = V19InkMuted,
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 12.sp,
+                                                    lineHeight = 16.sp,
+                                                    color = V19ErrorSoft,
                                                 )
+                                            }
+                                        }
+                                    }
+
+                                    group.people.forEach { person ->
+                                        val rowShape = RoundedCornerShape(12.dp)
+                                        val toggleAction = {
+                                            onTogglePersonForProduct(group.productId, person.personId)
+                                        }
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(rowShape)
+                                                .clickable(
+                                                    role = Role.Checkbox,
+                                                    onClick = toggleAction,
+                                                )
+                                                .testTag("discount_recipient_person_row_${group.productId}_${person.personId}"),
+                                            shape = rowShape,
+                                            color = Color.Transparent,
+                                            border = BorderStroke(
+                                                width = if (person.isSelected) 1.2.dp else 1.dp,
+                                                color = if (person.isSelected) {
+                                                    HomeCtaBorderGlow.copy(alpha = 0.76f)
+                                                } else {
+                                                    GlassNeonBorder15
+                                                },
+                                            ),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 52.dp)
+                                                    .background(
+                                                        if (person.isSelected) {
+                                                            Brush.verticalGradient(listOf(Color(0xD9391A66), Color(0xCC240D43)))
+                                                        } else {
+                                                            Brush.verticalGradient(listOf(Color(0x99160A2B), Color(0x99120822)))
+                                                        },
+                                                    )
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Checkbox(
+                                                    checked = person.isSelected,
+                                                    onCheckedChange = { toggleAction() },
+                                                    colors = CheckboxDefaults.colors(
+                                                        checkedColor = V19PurplePrimary,
+                                                        uncheckedColor = HomeCardNeonBorder.copy(alpha = 0.75f),
+                                                        checkmarkColor = Color.White,
+                                                    ),
+                                                    modifier = Modifier.testTag(
+                                                        "discount_recipient_person_checkbox_${group.productId}_${person.personId}",
+                                                    ),
+                                                )
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                ) {
+                                                    Text(
+                                                        text = person.personName,
+                                                        fontFamily = PlusJakartaSansFontFamily,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 14.sp,
+                                                        color = if (person.isSelected) Color.White else HomeCardLabelInk,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                    val qtyHint = if (group.quantity > 1) {
+                                                        " (${group.quantity}× ${CurrencyFormatter.formatBrl(person.unitAmount)})"
+                                                    } else {
+                                                        ""
+                                                    }
+                                                    Text(
+                                                        text = "Original neste produto: ${CurrencyFormatter.formatBrl(person.lineOriginalSubtotal)}$qtyHint",
+                                                        fontFamily = PlusJakartaSansFontFamily,
+                                                        fontSize = 12.sp,
+                                                        color = HomeCardLabelInk.copy(alpha = 0.90f),
+                                                    )
+                                                    if (person.isSelected) {
+                                                        Text(
+                                                            text = "Recebe desconto igualitário",
+                                                            fontFamily = PlusJakartaSansFontFamily,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            fontSize = 11.sp,
+                                                            color = V19GoldAccent,
+                                                        )
+                                                    } else {
+                                                        DiscountStatusPill(
+                                                            text = "Sem desconto — mantém 100%",
+                                                            backgroundColor = V19SuccessContainer,
+                                                            borderColor = V19MintSuccess.copy(alpha = 0.70f),
+                                                            textColor = V19SuccessInk,
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -628,68 +1070,6 @@ fun DiscountProtectedPeopleBox(
             }
         }
     }
-
-    val pendingPerson = pendingFixedUnprotectPerson
-    if (pendingPerson != null) {
-        AlertDialog(
-            onDismissRequest = { pendingFixedUnprotectPerson = null },
-            containerColor = V19SurfaceCard,
-            titleContentColor = Color.White,
-            textContentColor = V19InkPrimary,
-            modifier = Modifier.testTag("fixed_share_unprotect_dialog"),
-            title = {
-                Text(
-                    text = "Autorizar redução de valor fixo?",
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                )
-            },
-            text = {
-                Text(
-                    text = "${pendingPerson.personName} possui participação fixa de R$ 5,00 por unidade e é protegida por padrão contra descontos. Deseja autorizar que o desconto reduza a participação dessa pessoa?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = V19InkPrimary,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val personId = pendingPerson.personId
-                        pendingFixedUnprotectPerson = null
-                        onAuthorizeUnprotectFixedPerson(personId)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = V19PurpleButtonStart,
-                        contentColor = Color.White,
-                    ),
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag("fixed_share_authorize_reduction_button"),
-                ) {
-                    Text(
-                        text = "Autorizar redução",
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { pendingFixedUnprotectPerson = null },
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag("fixed_share_keep_protected_button"),
-                ) {
-                    Text(
-                        text = "Manter protegida",
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = V19GoldAccent,
-                    )
-                }
-            },
-        )
-    }
 }
 
 /**
@@ -697,7 +1077,6 @@ fun DiscountProtectedPeopleBox(
  * Exibe produtos selecionados/não selecionados, subtotais, pessoas protegidas/elegíveis
  * e a participação de cada pessoa ANTES e DEPOIS do desconto (além de tarifa e líquido).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VenderDiscountPreviewCard(
     preview: VenderDiscountPreview,
@@ -797,9 +1176,9 @@ fun VenderDiscountPreviewCard(
                 }
             }
 
-            // Produtos selecionados para desconto
+            // Produtos selecionados para desconto com detalhamento por pessoa no produto
             if (preview.selectedProducts.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Produtos com desconto (${preview.selectedProducts.size})",
                         fontFamily = PlusJakartaSansFontFamily,
@@ -817,8 +1196,8 @@ fun VenderDiscountPreviewCard(
                             border = BorderStroke(1.dp, GlassNeonBorder15),
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -850,6 +1229,48 @@ fun VenderDiscountPreviewCard(
                                     fontSize = 12.sp,
                                     color = HomeCardLabelInk.copy(alpha = 0.88f),
                                 )
+                                if (line.selectedRecipients.isNotEmpty()) {
+                                    Text(
+                                        text = "Recebem desconto igualitário (${line.selectedRecipients.size}):",
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.sp,
+                                        color = V19GoldAccent,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                    )
+                                    line.selectedRecipients.forEach { pLine ->
+                                        Text(
+                                            text = "• ${pLine.personName}: ${CurrencyFormatter.formatBrl(pLine.originalShare)} → ${CurrencyFormatter.formatBrl(pLine.finalShare)} (-${CurrencyFormatter.formatBrl(pLine.discountAbsorbed)})",
+                                            fontFamily = PlusJakartaSansFontFamily,
+                                            fontSize = 11.5.sp,
+                                            color = Color.White,
+                                            modifier = Modifier.testTag(
+                                                "preview_product_recipient_${line.productId}_${pLine.personId}",
+                                            ),
+                                        )
+                                    }
+                                }
+                                if (line.unselectedParticipants.isNotEmpty()) {
+                                    Text(
+                                        text = "Sem desconto neste produto (100% mantido):",
+                                        fontFamily = PlusJakartaSansFontFamily,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.sp,
+                                        color = V19SuccessInk,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                    )
+                                    line.unselectedParticipants.forEach { pLine ->
+                                        Text(
+                                            text = "• ${pLine.personName}: ${CurrencyFormatter.formatBrl(pLine.originalShare)} (sem desconto)",
+                                            fontFamily = PlusJakartaSansFontFamily,
+                                            fontSize = 11.5.sp,
+                                            color = V19SuccessInk,
+                                            modifier = Modifier.testTag(
+                                                "preview_product_unselected_${line.productId}_${pLine.personId}",
+                                            ),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -906,35 +1327,12 @@ fun VenderDiscountPreviewCard(
                 }
             }
 
-            // Pessoas protegidas x Pessoas que absorvem o desconto
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val protectedNames = preview.protectedPeople.joinToString(", ") { it.personName }
-                    .ifBlank { "Nenhuma" }
-                val eligibleNames = preview.eligiblePeople.joinToString(", ") { it.personName }
-                    .ifBlank { "Nenhuma" }
-                DiscountStatusPill(
-                    text = "Protegidas: $protectedNames",
-                    backgroundColor = Color(0xFF3E2914),
-                    borderColor = V19GoldAccent.copy(alpha = 0.72f),
-                    textColor = V19GoldAccent,
-                )
-                DiscountStatusPill(
-                    text = "Absorvem desconto: $eligibleNames",
-                    backgroundColor = Color(0xFF2D1654),
-                    borderColor = HomeCardNeonBorder.copy(alpha = 0.68f),
-                    textColor = V19PurpleSoftText,
-                )
-            }
-
-            // Detalhamento por pessoa: ANTES e DEPOIS do desconto
+            // Detalhamento consolidado por pessoa: ANTES e DEPOIS do desconto
             if (preview.allPersonBreakdowns.isNotEmpty()) {
                 HorizontalDivider(color = HomeCardSubtleDivider.copy(alpha = 0.30f))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Participação por pessoa (antes e depois)",
+                        text = "Total consolidado por pessoa (antes e depois)",
                         fontFamily = PlusJakartaSansFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
@@ -965,23 +1363,17 @@ private fun DiscountPreviewPersonRow(
             badgeBorder = GlassNeonBorder15
             badgeText = HomeCardLabelInk
         }
-        person.isProtected && person.isFixedUnitShare -> {
-            badgeLabel = "Protegida (fixo R$ 5,00/un)"
-            badgeBg = Color(0xFF473114)
-            badgeBorder = V19GoldAccent.copy(alpha = 0.80f)
-            badgeText = V19GoldAccent
-        }
-        person.isProtected -> {
-            badgeLabel = "Protegida"
-            badgeBg = V19SuccessContainer
-            badgeBorder = V19MintSuccess.copy(alpha = 0.70f)
-            badgeText = V19SuccessInk
-        }
-        else -> {
-            badgeLabel = "Absorve desconto"
+        person.receivesDiscountInAnyProduct -> {
+            badgeLabel = "Recebe desconto"
             badgeBg = Color(0xFF33185E)
             badgeBorder = HomeCardNeonBorder.copy(alpha = 0.70f)
             badgeText = V19PurpleSoftText
+        }
+        else -> {
+            badgeLabel = "Sem desconto (100%)"
+            badgeBg = V19SuccessContainer
+            badgeBorder = V19MintSuccess.copy(alpha = 0.70f)
+            badgeText = V19SuccessInk
         }
     }
 
@@ -994,7 +1386,11 @@ private fun DiscountPreviewPersonRow(
         color = GlassInnerBoxBg,
         border = BorderStroke(
             width = 1.dp,
-            color = if (person.isProtected) V19GoldAccent.copy(alpha = 0.55f) else GlassNeonBorder15,
+            color = if (!person.receivesDiscountInAnyProduct) {
+                V19MintSuccess.copy(alpha = 0.45f)
+            } else {
+                GlassNeonBorder15
+            },
         ),
     ) {
         Column(
@@ -1108,7 +1504,7 @@ private fun DiscountStatusPill(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.semantics(mergeDescendants = true) {},
         shape = RoundedCornerShape(999.dp),
         color = backgroundColor,
         border = BorderStroke(1.dp, borderColor),

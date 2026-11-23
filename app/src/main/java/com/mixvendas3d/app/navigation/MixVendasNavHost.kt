@@ -187,8 +187,10 @@ fun MixVendasAppShell(
                                 onToggleDiscountProduct = viewModel::onToggleDiscountProduct,
                                 onSelectAllDiscountProducts = viewModel::onSelectAllDiscountProducts,
                                 onClearDiscountProducts = viewModel::onClearDiscountProducts,
-                                onToggleProtectedDiscountPerson = viewModel::onToggleProtectedDiscountPerson,
-                                onAuthorizeUnprotectFixedPerson = viewModel::onAuthorizeUnprotectFixedPerson,
+                                onToggleDiscountPersonForProduct = viewModel::onToggleDiscountPersonForProduct,
+                                onApplyDiscountToggled = viewModel::onApplyDiscountToggled,
+                                onDiscountPeopleModeChanged = viewModel::onDiscountPeopleModeChanged,
+                                onToggleUnifiedDiscountPerson = viewModel::onToggleUnifiedDiscountPerson,
                             )
                         }
                     }

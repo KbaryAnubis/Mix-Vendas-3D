@@ -566,35 +566,12 @@ fun PeriodFilterRow(
         }
 
         if (selectedPeriod == PreviewPeriodFilter.CUSTOM) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedTextField(
-                    value = fromDate,
-                    onValueChange = { onCustomDatesChanged(it, toDate) },
-                    label = { Text("De (AAAA-MM-DD)") },
-                    placeholder = { Text("2026-11-01") },
-                    singleLine = true,
-                    colors = v19TextFieldColors(),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("period_from_input"),
-                )
-                OutlinedTextField(
-                    value = toDate,
-                    onValueChange = { onCustomDatesChanged(fromDate, it) },
-                    label = { Text("Até (AAAA-MM-DD)") },
-                    placeholder = { Text("2026-11-30") },
-                    singleLine = true,
-                    colors = v19TextFieldColors(),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("period_to_input"),
-                )
-            }
+            CustomDateRangeFilterFields(
+                fromDate = fromDate,
+                toDate = toDate,
+                onCustomDatesChanged = onCustomDatesChanged,
+                useV19SurfaceColors = true,
+            )
         }
     }
 }

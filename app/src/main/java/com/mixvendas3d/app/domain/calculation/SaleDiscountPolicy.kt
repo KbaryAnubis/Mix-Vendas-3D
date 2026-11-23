@@ -2,26 +2,58 @@ package com.mixvendas3d.app.domain.calculation
 
 import com.mixvendas3d.app.domain.models.MoneyCents
 import com.mixvendas3d.app.domain.models.Product
-import com.mixvendas3d.app.domain.models.ProductParticipantSplit
 import com.mixvendas3d.app.domain.models.SaleCalculationInput
 import com.mixvendas3d.app.domain.models.SaleCalculationResult
 import com.mixvendas3d.app.domain.models.SaleDiscountConfigSnapshot
 import com.mixvendas3d.app.domain.models.SaleItemCalculationResult
-import com.mixvendas3d.app.util.CurrencyFormatter
 import java.util.Locale
 
-data class DiscountSelectablePersonItem(
+enum class DiscountPeopleSelectionMode {
+    UNIFIED,
+    INDIVIDUAL_BY_PRODUCT,
+}
+
+data class DiscountUnifiedPersonOption(
     val personId: String,
     val personName: String,
     val personColorIndex: Int,
-    val productCount: Int,
-    val totalUnitsAcrossSelected: Int,
-    val originalTotalInSelectedProducts: MoneyCents,
-    val fixedUnitAmountCents: Long?,
-    val isProtected: Boolean,
-    val isFixedUnitProtectedByDefault: Boolean,
-    val isFixedReductionAuthorized: Boolean,
-    val participationSummary: String,
+    val participatingProductIds: List<String>,
+    val participatingProductNames: List<String>,
+    val totalOriginalSubtotal: MoneyCents,
+    val isSelected: Boolean,
+)
+
+data class DiscountProductPersonOption(
+    val personId: String,
+    val personName: String,
+    val personColorIndex: Int,
+    val unitAmount: MoneyCents,
+    val lineOriginalSubtotal: MoneyCents,
+    val isSelected: Boolean,
+)
+
+data class DiscountProductPeopleGroup(
+    val productId: String,
+    val productName: String,
+    val quantity: Int,
+    val originalSubtotal: MoneyCents,
+    val people: List<DiscountProductPersonOption>,
+) {
+    val selectedCount: Int
+        get() = people.count { it.isSelected }
+
+    val totalCount: Int
+        get() = people.size
+}
+
+data class DiscountPreviewProductPersonLine(
+    val personId: String,
+    val personName: String,
+    val personColorIndex: Int,
+    val originalShare: MoneyCents,
+    val discountAbsorbed: MoneyCents,
+    val finalShare: MoneyCents,
+    val isSelectedForDiscount: Boolean,
 )
 
 data class DiscountPreviewProductLine(
@@ -33,6 +65,8 @@ data class DiscountPreviewProductLine(
     val discountAmount: MoneyCents,
     val finalAmount: MoneyCents,
     val isSelectedForDiscount: Boolean,
+    val selectedRecipients: List<DiscountPreviewProductPersonLine> = emptyList(),
+    val unselectedParticipants: List<DiscountPreviewProductPersonLine> = emptyList(),
 )
 
 data class DiscountPreviewPersonLine(
@@ -44,8 +78,7 @@ data class DiscountPreviewPersonLine(
     val afterDiscountGross: MoneyCents,
     val feeAmount: MoneyCents,
     val netAmount: MoneyCents,
-    val isProtected: Boolean,
-    val isFixedUnitShare: Boolean,
+    val receivesDiscountInAnyProduct: Boolean,
     val participatesInSelectedProducts: Boolean,
 )
 
@@ -55,8 +88,6 @@ data class VenderDiscountPreview(
     val selectedOriginalSubtotal: MoneyCents,
     val discountTotal: MoneyCents,
     val selectedFinalAmount: MoneyCents,
-    val protectedPeople: List<DiscountPreviewPersonLine>,
-    val eligiblePeople: List<DiscountPreviewPersonLine>,
     val allPersonBreakdowns: List<DiscountPreviewPersonLine>,
     val calculationResult: SaleCalculationResult?,
     val validationError: String?,
@@ -66,137 +97,53 @@ data class VenderDiscountPreview(
 }
 
 /**
- * Regras centralizadas de política de desconto:
- * - Identificação de remuneração fixa por unidade (caso real de R$ 5,00/un) protegida por padrão.
- * - Agregação deduplicada de pessoas participantes dos produtos selecionados para desconto.
- * - Reconstrução determinística das pessoas protegidas ao reabrir uma venda salva para edição.
+ * Regras centralizadas de política de desconto por produto e por pessoa:
+ * - Seleção independente das pessoas que RECEBERÃO o desconto dentro de cada produto marcado.
+ * - Remoção completa de proteção automática por valor fixo (R$ 5,00/un).
+ * - Reconstrução determinística das seleções por produto ao reabrir uma venda salva para edição.
  * - Construção da prévia detalhada em tempo real diretamente sobre o [SaleFinancialEngine].
  */
 object SaleDiscountPolicy {
-    const val FIXED_UNIT_SHARE_PROTECTED_BY_DEFAULT_CENTS: Long = 500L // R$ 5,00 por unidade
     private val ptBrLocale: Locale = Locale.forLanguageTag("pt-BR")
 
     /**
-     * Identifica o padrão real de remuneração fixa por unidade (R$ 5,00/un) em produtos
-     * compartilhados onde existe pelo menos outro participante com fatia unitária maior.
+     * Constrói os grupos independentes por produto selecionado na Caixa 1,
+     * listando as pessoas participantes de cada produto com seus respectivos valores originais
+     * e estado de marcação independente por produto.
      */
-    fun isFixedUnitShareParticipant(
-        product: Product,
-        split: ProductParticipantSplit,
-    ): Boolean {
-        if (product.participants.size < 2) return false
-        if (split.amount.rawCents != FIXED_UNIT_SHARE_PROTECTED_BY_DEFAULT_CENTS) return false
-        return product.participants.any { other ->
-            other.personId != split.personId && other.amount.rawCents > split.amount.rawCents
-        }
-    }
-
-    /**
-     * Retorna o conjunto de IDs de pessoas que possuem remuneração fixa de R$ 5,00/un
-     * em pelo menos um dos [selectedProducts].
-     */
-    fun detectFixedUnitSharePersonIds(selectedProducts: List<Product>): Set<String> {
-        val result = LinkedHashSet<String>()
-        selectedProducts.forEach { product ->
-            product.participants.forEach { split ->
-                if (isFixedUnitShareParticipant(product, split)) {
-                    result.add(split.personId)
-                }
-            }
-        }
-        return result
-    }
-
-    /**
-     * Retorna os IDs de todas as pessoas vinculadas aos produtos selecionados na primeira caixa.
-     */
-    fun collectPersonIdsInProducts(products: List<Product>): Set<String> {
-        val result = LinkedHashSet<String>()
-        products.forEach { product ->
-            product.participants.forEach { split ->
-                result.add(split.personId)
-            }
-        }
-        return result
-    }
-
-    /**
-     * Consolida, sem duplicação, as pessoas participantes dos produtos selecionados para desconto,
-     * calculando resumo de participação e sinalizando proteção padrão para remuneração fixa (R$ 5,00/un).
-     */
-    fun buildSelectablePeopleForDiscount(
+    fun buildProductPeopleGroups(
         selectedDiscountEntries: List<Pair<Product, Int>>,
-        protectedPersonIds: Set<String>,
-        unprotectedFixedPersonIds: Set<String>,
-    ): List<DiscountSelectablePersonItem> {
-        data class Acc(
-            val personId: String,
-            val personName: String,
-            val personColorIndex: Int,
-            var productCount: Int = 0,
-            var totalUnits: Int = 0,
-            var totalOriginalCents: Long = 0L,
-            var hasFixedUnitShare: Boolean = false,
-            val unitAmounts: MutableSet<Long> = LinkedHashSet(),
-        )
-
-        val byPerson = LinkedHashMap<String, Acc>()
-        selectedDiscountEntries.forEach { (product, qty) ->
-            if (qty <= 0) return@forEach
-            product.participants.forEach { split ->
-                val lineCents = MonetaryRounding.safeMultiplyOrNull(split.amount.rawCents, qty) ?: 0L
-                val acc = byPerson.getOrPut(split.personId) {
-                    Acc(
-                        personId = split.personId,
-                        personName = split.personName,
-                        personColorIndex = split.personColorIndex,
+        selectedPeopleByProduct: Map<String, Set<String>>,
+    ): List<DiscountProductPeopleGroup> {
+        return selectedDiscountEntries
+            .filter { it.second > 0 }
+            .map { (product, qty) ->
+                val selectedSet = selectedPeopleByProduct[product.id].orEmpty()
+                val lineSubtotal = MonetaryRounding.safeMultiplyOrNull(product.price.rawCents, qty) ?: 0L
+                val options = product.participants
+                    .sortedWith(
+                        Comparator { a, b ->
+                            val nameCmp = a.personName.lowercase(ptBrLocale).compareTo(b.personName.lowercase(ptBrLocale))
+                            if (nameCmp != 0) nameCmp else a.personId.compareTo(b.personId)
+                        },
                     )
-                }
-                acc.productCount += 1
-                acc.totalUnits += qty
-                acc.totalOriginalCents = MonetaryRounding.safeAddOrNull(acc.totalOriginalCents, lineCents)
-                    ?: acc.totalOriginalCents
-                acc.unitAmounts.add(split.amount.rawCents)
-                if (isFixedUnitShareParticipant(product, split)) {
-                    acc.hasFixedUnitShare = true
-                }
-            }
-        }
-
-        return byPerson.values
-            .sortedWith(
-                Comparator { a, b ->
-                    val nameCmp = a.personName.lowercase(ptBrLocale).compareTo(b.personName.lowercase(ptBrLocale))
-                    if (nameCmp != 0) nameCmp else a.personId.compareTo(b.personId)
-                },
-            )
-            .map { acc ->
-                val isProtected = acc.personId in protectedPersonIds
-                val fixedAuthorized = acc.hasFixedUnitShare && !isProtected && acc.personId in unprotectedFixedPersonIds
-                val productWord = if (acc.productCount == 1) "produto" else "produtos"
-                val totalText = CurrencyFormatter.formatBrl(MoneyCents(acc.totalOriginalCents))
-                val summary = if (acc.hasFixedUnitShare) {
-                    val fixedFormatted = CurrencyFormatter.formatBrl(MoneyCents(FIXED_UNIT_SHARE_PROTECTED_BY_DEFAULT_CENTS))
-                    "$totalText em ${acc.productCount} $productWord (${acc.totalUnits}× $fixedFormatted/un fixo)"
-                } else if (acc.unitAmounts.size == 1) {
-                    val unitFormatted = CurrencyFormatter.formatBrl(MoneyCents(acc.unitAmounts.first()))
-                    "$totalText em ${acc.productCount} $productWord (${acc.totalUnits}× $unitFormatted/un)"
-                } else {
-                    "$totalText em ${acc.productCount} $productWord"
-                }
-
-                DiscountSelectablePersonItem(
-                    personId = acc.personId,
-                    personName = acc.personName,
-                    personColorIndex = acc.personColorIndex,
-                    productCount = acc.productCount,
-                    totalUnitsAcrossSelected = acc.totalUnits,
-                    originalTotalInSelectedProducts = MoneyCents(acc.totalOriginalCents),
-                    fixedUnitAmountCents = if (acc.hasFixedUnitShare) FIXED_UNIT_SHARE_PROTECTED_BY_DEFAULT_CENTS else null,
-                    isProtected = isProtected,
-                    isFixedUnitProtectedByDefault = acc.hasFixedUnitShare,
-                    isFixedReductionAuthorized = fixedAuthorized,
-                    participationSummary = summary,
+                    .map { split ->
+                        val lineOrig = MonetaryRounding.safeMultiplyOrNull(split.amount.rawCents, qty) ?: 0L
+                        DiscountProductPersonOption(
+                            personId = split.personId,
+                            personName = split.personName,
+                            personColorIndex = split.personColorIndex,
+                            unitAmount = split.amount,
+                            lineOriginalSubtotal = MoneyCents(lineOrig),
+                            isSelected = split.personId in selectedSet,
+                        )
+                    }
+                DiscountProductPeopleGroup(
+                    productId = product.id,
+                    productName = product.name,
+                    quantity = qty,
+                    originalSubtotal = MoneyCents(lineSubtotal),
+                    people = options,
                 )
             }
     }
@@ -213,60 +160,158 @@ object SaleDiscountPolicy {
     }
 
     /**
-     * Reconstrói deterministicamente as pessoas protegidas contra desconto a partir dos snapshots
-     * reais gravados em [SaleCalculationResult.items]:
-     * Uma pessoa é identificada como protegida quando participa de itens descontados com participação
-     * original positiva, recebeu desconto zero em TODOS os itens selecionados dos quais participa, e
-     * receberia >= 1 centavo de desconto caso a distribuição proporcional padrão sem proteção fosse aplicada.
+     * Constrói a lista unificada e sem repetições das pessoas participantes dos produtos
+     * selecionados para desconto, preservando o valor original acumulado e os produtos vinculados.
      */
-    fun inferProtectedPersonIdsFromSnapshot(
-        calc: SaleCalculationResult,
-        selectedDiscountProductIds: Set<String> = selectedProductIdsFromSnapshot(calc),
-    ): Set<String> {
-        if (calc.discountTotal.rawCents <= 0L) return emptySet()
+    fun buildUnifiedPeopleOptions(
+        selectedDiscountEntries: List<Pair<Product, Int>>,
+        unifiedSelectedPersonIds: Set<String>,
+    ): List<DiscountUnifiedPersonOption> {
+        data class Acc(
+            val personId: String,
+            val personName: String,
+            val personColorIndex: Int,
+            val productIds: MutableList<String> = mutableListOf(),
+            val productNames: MutableList<String> = mutableListOf(),
+            var totalOriginalCents: Long = 0L,
+        )
 
-        val confirmedProtectedCandidates = LinkedHashSet<String>()
-        val absorbedAnyDiscount = LinkedHashSet<String>()
-
-        calc.items.forEach { item: SaleItemCalculationResult ->
-            if (item.productId !in selectedDiscountProductIds) return@forEach
-            val itemDiscount = item.discountAmount.rawCents
-            if (itemDiscount <= 0L) return@forEach
-
-            item.participantSplits.forEach { split ->
-                if (split.discountAmount.rawCents > 0L) {
-                    absorbedAnyDiscount.add(split.personId)
+        val byPerson = LinkedHashMap<String, Acc>()
+        selectedDiscountEntries
+            .filter { it.second > 0 }
+            .forEach { (product, qty) ->
+                product.participants.forEach { split ->
+                    val lineOrig = MonetaryRounding.safeMultiplyOrNull(split.amount.rawCents, qty) ?: 0L
+                    val acc = byPerson.getOrPut(split.personId) {
+                        Acc(
+                            personId = split.personId,
+                            personName = split.personName,
+                            personColorIndex = split.personColorIndex,
+                        )
+                    }
+                    if (product.id !in acc.productIds) {
+                        acc.productIds.add(product.id)
+                        acc.productNames.add(product.name)
+                    }
+                    acc.totalOriginalCents = MonetaryRounding.safeAddOrNull(acc.totalOriginalCents, lineOrig)
+                        ?: acc.totalOriginalCents
                 }
             }
 
-            // Calcula o que cada participante receberia de desconto SEM proteção neste item
-            val allBuckets = item.participantSplits.map { split ->
-                WeightedAllocationBucket(
-                    key = split.personId,
-                    weight = split.originalSubtotal.rawCents,
+        return byPerson.values
+            .sortedWith(
+                Comparator { a, b ->
+                    val nameCmp = a.personName.lowercase(ptBrLocale).compareTo(b.personName.lowercase(ptBrLocale))
+                    if (nameCmp != 0) nameCmp else a.personId.compareTo(b.personId)
+                },
+            )
+            .map { acc ->
+                DiscountUnifiedPersonOption(
+                    personId = acc.personId,
+                    personName = acc.personName,
+                    personColorIndex = acc.personColorIndex,
+                    participatingProductIds = acc.productIds.toList(),
+                    participatingProductNames = acc.productNames.toList(),
+                    totalOriginalSubtotal = MoneyCents(acc.totalOriginalCents),
+                    isSelected = acc.personId in unifiedSelectedPersonIds,
                 )
             }
-            val totalWeight = allBuckets.sumOf { it.weight }
-            if (totalWeight <= 0L) return@forEach
+    }
 
-            val unprotectedGrossMap = MonetaryRounding.allocateByWeightsDeterministic(
-                totalAmount = item.finalAmount.rawCents,
-                buckets = allBuckets,
-            )
+    /**
+     * Resolve o mapa efetivo `productId -> Set<personId>` de acordo com o modo ativo
+     * (`UNIFIED` ou `INDIVIDUAL_BY_PRODUCT`), garantindo que cada pessoa só seja vinculada
+     * aos produtos selecionados em que realmente participa.
+     */
+    fun resolveEffectiveRecipientsByProduct(
+        mode: DiscountPeopleSelectionMode,
+        selectedDiscountProducts: List<Product>,
+        unifiedSelectedPersonIds: Set<String>,
+        individualSelectedPeopleByProduct: Map<String, Set<String>>,
+    ): Map<String, Set<String>> {
+        val result = LinkedHashMap<String, Set<String>>(selectedDiscountProducts.size)
+        selectedDiscountProducts.forEach { product ->
+            val validParticipants = product.participants.mapTo(LinkedHashSet()) { it.personId }
+            result[product.id] = when (mode) {
+                DiscountPeopleSelectionMode.UNIFIED ->
+                    validParticipants.intersect(unifiedSelectedPersonIds)
+                DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT ->
+                    individualSelectedPeopleByProduct[product.id]
+                        ?.intersect(validParticipants)
+                        ?: validParticipants
+            }
+        }
+        return result
+    }
 
-            item.participantSplits.forEach { split ->
-                val orig = split.originalSubtotal.rawCents
-                val actualDiscount = split.discountAmount.rawCents
-                val unprotectedGross = unprotectedGrossMap.getValue(split.personId)
-                val unprotectedDiscount = orig - unprotectedGross
-                if (orig > 0L && actualDiscount == 0L && unprotectedDiscount > 0L) {
-                    confirmedProtectedCandidates.add(split.personId)
+    /**
+     * Infere o modo de seleção de pessoas (`UNIFIED` vs `INDIVIDUAL_BY_PRODUCT`) a partir de uma
+     * venda salva. Se todas as pessoas presentes nos produtos com desconto tiveram a mesma escolha
+     * em todos os produtos selecionados onde participam, restaura em `UNIFIED`; caso haja seleção
+     * divergente entre produtos, restaura em `INDIVIDUAL_BY_PRODUCT`.
+     */
+    fun inferDiscountSelectionModeFromSnapshot(
+        calc: SaleCalculationResult,
+        selectedDiscountProductIds: Set<String> = selectedProductIdsFromSnapshot(calc),
+        recipientsByProduct: Map<String, Set<String>> = inferDiscountRecipientsByProductFromSnapshot(
+            calc = calc,
+            selectedDiscountProductIds = selectedDiscountProductIds,
+        ),
+    ): Pair<DiscountPeopleSelectionMode, Set<String>> {
+        val discountItems = calc.items.filter { it.productId in selectedDiscountProductIds }
+        if (discountItems.isEmpty()) {
+            val allParticipants = calc.items
+                .flatMap { it.participantSplits }
+                .mapTo(LinkedHashSet()) { it.personId }
+            return DiscountPeopleSelectionMode.UNIFIED to allParticipants
+        }
+
+        val selectionsByPerson = LinkedHashMap<String, MutableList<Boolean>>()
+        val unionSelected = LinkedHashSet<String>()
+        discountItems.forEach { item ->
+            val selectedForItem = recipientsByProduct[item.productId].orEmpty()
+            item.participantSplits.forEach { sp ->
+                val isSelected = sp.personId in selectedForItem
+                if (isSelected) {
+                    unionSelected.add(sp.personId)
                 }
+                selectionsByPerson.getOrPut(sp.personId) { mutableListOf() }.add(isSelected)
             }
         }
 
-        confirmedProtectedCandidates.removeAll(absorbedAnyDiscount)
-        return confirmedProtectedCandidates
+        val hasMixedChoiceAcrossProducts = selectionsByPerson.values.any { choices ->
+            choices.any { it } && choices.any { !it }
+        }
+        val mode = if (hasMixedChoiceAcrossProducts) {
+            DiscountPeopleSelectionMode.INDIVIDUAL_BY_PRODUCT
+        } else {
+            DiscountPeopleSelectionMode.UNIFIED
+        }
+        return mode to unionSelected
+    }
+
+    /**
+     * Reconstrói deterministicamente o mapa `productId -> Set<personId>` das pessoas que
+     * receberam desconto em cada produto a partir dos snapshots reais gravados em [SaleCalculationResult.items].
+     */
+    fun inferDiscountRecipientsByProductFromSnapshot(
+        calc: SaleCalculationResult,
+        selectedDiscountProductIds: Set<String> = selectedProductIdsFromSnapshot(calc),
+    ): Map<String, Set<String>> {
+        val result = LinkedHashMap<String, Set<String>>(calc.items.size)
+        calc.items.forEach { item: SaleItemCalculationResult ->
+            if (item.productId !in selectedDiscountProductIds) {
+                result[item.productId] = item.participantSplits.mapTo(LinkedHashSet()) { it.personId }
+            } else if (item.discountAmount.rawCents > 0L) {
+                val recipients = item.participantSplits
+                    .filter { it.discountAmount.rawCents > 0L }
+                    .mapTo(LinkedHashSet()) { it.personId }
+                result[item.productId] = recipients
+            } else {
+                result[item.productId] = item.participantSplits.mapTo(LinkedHashSet()) { it.personId }
+            }
+        }
+        return result
     }
 
     /**
@@ -276,7 +321,7 @@ object SaleDiscountPolicy {
     fun buildPreview(
         selectedEntries: List<Pair<Product, Int>>,
         discountSelectedProductIds: Set<String>,
-        protectedPersonIds: Set<String>,
+        selectedPeopleByProduct: Map<String, Set<String>>,
         discountCents: Long,
         calculationInputBuilder: () -> SaleCalculationInput,
         preValidationError: String? = null,
@@ -291,10 +336,13 @@ object SaleDiscountPolicy {
             ) ?: acc
         }
 
-        val fixedPersonIds = detectFixedUnitSharePersonIds(selectedEntryList.map { it.first })
-        val peopleInSelectedProducts = collectPersonIdsInProducts(selectedEntryList.map { it.first })
+        val peopleInSelectedProducts = LinkedHashSet<String>()
+        selectedEntryList.forEach { (product, _) ->
+            product.participants.forEach { split ->
+                peopleInSelectedProducts.add(split.personId)
+            }
+        }
 
-        // Tenta executar o motor financeiro real se não houver erro de entrada prévio
         var calcResult: SaleCalculationResult? = null
         var errorMsg: String? = preValidationError
 
@@ -312,10 +360,41 @@ object SaleDiscountPolicy {
         }
 
         val itemResultById = calcResult?.items?.associateBy { it.productId }.orEmpty()
+        val personIdsReceivingAnyDiscount = LinkedHashSet<String>()
 
         val selectedProductLines = selectedEntryList.map { (product, qty) ->
             val origSub = MonetaryRounding.safeMultiplyOrNull(product.price.rawCents, qty) ?: 0L
             val computed = itemResultById[product.id]
+            val selectedIdsInProduct = selectedPeopleByProduct[product.id].orEmpty()
+            val computedSplitsByPerson = computed?.participantSplits?.associateBy { it.personId }.orEmpty()
+
+            val orderedParticipants = product.participants.sortedWith(
+                Comparator { a, b ->
+                    val nameCmp = a.personName.lowercase(ptBrLocale).compareTo(b.personName.lowercase(ptBrLocale))
+                    if (nameCmp != 0) nameCmp else a.personId.compareTo(b.personId)
+                },
+            )
+
+            val personLinesForProduct = orderedParticipants.map { split ->
+                val lineOrig = MonetaryRounding.safeMultiplyOrNull(split.amount.rawCents, qty) ?: 0L
+                val computedSplit = computedSplitsByPerson[split.personId]
+                val disc = computedSplit?.discountAmount?.rawCents ?: 0L
+                val finalShare = computedSplit?.grossAmount?.rawCents ?: lineOrig
+                val isSelected = split.personId in selectedIdsInProduct
+                if (isSelected && disc > 0L) {
+                    personIdsReceivingAnyDiscount.add(split.personId)
+                }
+                DiscountPreviewProductPersonLine(
+                    personId = split.personId,
+                    personName = split.personName,
+                    personColorIndex = split.personColorIndex,
+                    originalShare = MoneyCents(lineOrig),
+                    discountAbsorbed = MoneyCents(disc),
+                    finalShare = MoneyCents(finalShare),
+                    isSelectedForDiscount = isSelected,
+                )
+            }
+
             DiscountPreviewProductLine(
                 productId = product.id,
                 productName = product.name,
@@ -325,6 +404,8 @@ object SaleDiscountPolicy {
                 discountAmount = computed?.discountAmount ?: MoneyCents.ZERO,
                 finalAmount = computed?.finalAmount ?: MoneyCents(origSub),
                 isSelectedForDiscount = true,
+                selectedRecipients = personLinesForProduct.filter { it.isSelectedForDiscount },
+                unselectedParticipants = personLinesForProduct.filter { !it.isSelectedForDiscount },
             )
         }
 
@@ -342,7 +423,6 @@ object SaleDiscountPolicy {
             )
         }
 
-        // Consolida participação original por pessoa em toda a venda
         data class PersonBaseAcc(
             val personId: String,
             val personName: String,
@@ -378,6 +458,12 @@ object SaleDiscountPolicy {
                 val fee = computed?.feeAmount?.rawCents ?: 0L
                 val net = computed?.netAmount?.rawCents ?: afterGross
                 val inSelected = acc.personId in peopleInSelectedProducts
+                val receivesAnyDiscount = inSelected && (
+                    acc.personId in personIdsReceivingAnyDiscount ||
+                        selectedEntryList.any { (prod, _) ->
+                            acc.personId in selectedPeopleByProduct[prod.id].orEmpty()
+                        }
+                    )
                 DiscountPreviewPersonLine(
                     personId = acc.personId,
                     personName = acc.personName,
@@ -387,14 +473,10 @@ object SaleDiscountPolicy {
                     afterDiscountGross = MoneyCents(afterGross),
                     feeAmount = MoneyCents(fee),
                     netAmount = MoneyCents(net),
-                    isProtected = inSelected && acc.personId in protectedPersonIds,
-                    isFixedUnitShare = inSelected && acc.personId in fixedPersonIds,
+                    receivesDiscountInAnyProduct = receivesAnyDiscount,
                     participatesInSelectedProducts = inSelected,
                 )
             }
-
-        val protectedPeople = allPersonLines.filter { it.participatesInSelectedProducts && it.isProtected }
-        val eligiblePeople = allPersonLines.filter { it.participatesInSelectedProducts && !it.isProtected }
 
         val selectedFinalCents = if (calcResult != null) {
             selectedProductLines.sumOf { it.finalAmount.rawCents }
@@ -408,8 +490,6 @@ object SaleDiscountPolicy {
             selectedOriginalSubtotal = MoneyCents(selectedOriginalCents),
             discountTotal = MoneyCents(discountCents),
             selectedFinalAmount = MoneyCents(selectedFinalCents),
-            protectedPeople = protectedPeople,
-            eligiblePeople = eligiblePeople,
             allPersonBreakdowns = allPersonLines,
             calculationResult = calcResult,
             validationError = errorMsg,
