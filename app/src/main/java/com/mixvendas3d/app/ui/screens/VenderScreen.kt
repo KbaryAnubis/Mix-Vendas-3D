@@ -567,24 +567,23 @@ fun VenderScreen(
                         }
                     }
 
-                    if (showDiscountOptions || form.isDiscountTargetMissing) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        DiscountProductsSelectionBox(
-                            selectedEntries = selectedEntries,
-                            selectedDiscountProductIds = effectiveDiscountSelectedProductIds,
-                            discountCents = discountCents,
-                            targetMissing = form.isDiscountTargetMissing,
-                            onToggleProduct = onToggleDiscountProduct,
-                            onSelectAll = onSelectAllDiscountProducts,
-                            onClearAll = onClearDiscountProducts,
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        DiscountProtectedPeopleBox(
-                            selectablePeople = selectableDiscountPeople,
-                            onToggleProtectedPerson = onToggleProtectedDiscountPerson,
-                            onAuthorizeUnprotectFixedPerson = onAuthorizeUnprotectFixedPerson,
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    DiscountProductsSelectionBox(
+                        selectedEntries = selectedEntries,
+                        selectedDiscountProductIds = effectiveDiscountSelectedProductIds,
+                        discountCents = discountCents,
+                        targetMissing = form.isDiscountTargetMissing,
+                        onToggleProduct = onToggleDiscountProduct,
+                        onSelectAll = onSelectAllDiscountProducts,
+                        onClearAll = onClearDiscountProducts,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DiscountProtectedPeopleBox(
+                        selectablePeople = selectableDiscountPeople,
+                        onToggleProtectedPerson = onToggleProtectedDiscountPerson,
+                        onAuthorizeUnprotectFixedPerson = onAuthorizeUnprotectFixedPerson,
+                        hasProductsInSale = selectedEntries.isNotEmpty(),
+                    )
                 }
 
                 // Card Observação (opcional)

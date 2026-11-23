@@ -467,4 +467,154 @@ class DiscountSystemUiIntegrationTest {
             assertTrue(validation.preconditions.canExecuteAdditiveWithoutUserDecisions)
         }
     }
+
+    @Test
+    fun `04 nova venda displays both discount boxes immediately before typing discount, syncs on product changes, and saves exact calculation`() {
+        val app = ApplicationProvider.getApplicationContext<MixVendasApplication>()
+
+        val seeded = runBlocking(Dispatchers.IO) {
+            val joao = app.catalogRepository.createPerson("João")
+            val maria = app.catalogRepository.createPerson("Maria")
+            val pedro = app.catalogRepository.createPerson("Pedro")
+
+            // Prod 1 (R$ 45,00): João R$ 40,00 + Maria R$ 5,00 (fixo por unidade)
+            val prod1 = app.catalogRepository.createProduct(
+                name = "Luminária 3D",
+                price = MoneyCents(4_500L),
+                active = true,
+                participants = listOf(
+                    ProductParticipantDraft(joao.id, MoneyCents(4_000L)),
+                    ProductParticipantDraft(maria.id, MoneyCents(500L)),
+                ),
+                feeResponsibilityMode = FeeResponsibilityMode.PROPORTIONAL,
+                feeOwnerPersonId = null,
+            )
+            // Prod 2 (R$ 30,00): João R$ 20,00 + Pedro R$ 10,00
+            val prod2 = app.catalogRepository.createProduct(
+                name = "Porta Caneta",
+                price = MoneyCents(3_000L),
+                active = true,
+                participants = listOf(
+                    ProductParticipantDraft(joao.id, MoneyCents(2_000L)),
+                    ProductParticipantDraft(pedro.id, MoneyCents(1_000L)),
+                ),
+                feeResponsibilityMode = FeeResponsibilityMode.PROPORTIONAL,
+                feeOwnerPersonId = null,
+            )
+            // Prod 3 (R$ 25,00): somente Pedro
+            val prod3 = app.catalogRepository.createProduct(
+                name = "Imã Coleção",
+                price = MoneyCents(2_500L),
+                active = true,
+                participants = listOf(
+                    ProductParticipantDraft(pedro.id, MoneyCents(2_500L)),
+                ),
+                feeResponsibilityMode = FeeResponsibilityMode.PROPORTIONAL,
+                feeOwnerPersonId = null,
+            )
+            listOf(joao.id, maria.id, pedro.id, prod1.id, prod2.id, prod3.id)
+        }
+        val joaoId = seeded[0]
+        val mariaId = seeded[1]
+        val pedroId = seeded[2]
+        val prod1Id = seeded[3]
+        val prod2Id = seeded[4]
+        val prod3Id = seeded[5]
+
+        // 1) Abre VENDER -> NOVA VENDA (sem nenhum produto e sem nenhum desconto digitado ainda)
+        composeRule.onNodeWithTag("nav_tab_vender").performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("vender_header_title").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("vender_header_title").assertTextContains("Nova venda")
+
+        // Ambas as caixas JÁ devem existir e estar visíveis na área de desconto da Nova venda!
+        composeRule.onNodeWithTag("discount_products_box").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_products_empty").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_protected_people_box").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("PESSOAS QUE NÃO RECEBERÃO O DESCONTO").assertExists()
+
+        // 2) Adiciona os 3 produtos à Nova venda (subtotal R$ 100,00, desconto ainda R$ 0,00)
+        pickProducts(listOf(prod1Id, prod2Id, prod3Id))
+
+        // Sem digitar nenhum desconto ainda, Caixa 1 já lista os 3 produtos adicionados
+        composeRule.onNodeWithTag("discount_product_row_$prod1Id").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_product_row_$prod2Id").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_product_row_$prod3Id").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prod1Id").assertIsOn()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prod2Id").assertIsOn()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prod3Id").assertIsOn()
+
+        // 3) Antes de digitar o desconto, desmarca Prod 3 na Caixa 1 e abre a Caixa 2
+        composeRule.onNodeWithTag("discount_product_row_$prod3Id").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("discount_product_checkbox_$prod3Id").assertIsOff()
+
+        composeRule.onNodeWithTag("discount_protected_people_header").performScrollTo().performClick()
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("discount_protected_person_row_$mariaId").fetchSemanticsNodes().isNotEmpty()
+        }
+        // Participantes únicos de Prod 1 + Prod 2: João, Maria (fixo R$ 5,00/un protegido por padrão) e Pedro
+        composeRule.onAllNodesWithTag("discount_protected_person_row_$joaoId").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("discount_protected_person_row_$mariaId").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("discount_protected_person_row_$pedroId").assertCountEquals(1)
+        composeRule.onNodeWithTag("discount_protected_person_checkbox_$mariaId").performScrollTo().assertIsOn()
+        composeRule.onNodeWithTag("discount_protected_person_checkbox_$pedroId").performScrollTo().assertIsOff()
+
+        // Protege Pedro ANTES de digitar o desconto
+        composeRule.onNodeWithTag("discount_protected_person_row_$pedroId").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("discount_protected_person_checkbox_$pedroId").performScrollTo().assertIsOn()
+
+        // 4) Agora informa valor final R$ 80,00 (desconto R$ 20,00) -> seleções feitas antes permanecem e chegam ao motor
+        composeRule.onNodeWithTag("sale_final_value_input").performScrollTo().performTextReplacement("80,00")
+        waitUiUntil {
+            composeRule.onAllNodesWithTag("vender_discount_preview_card").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Conferência na prévia ao vivo:
+        // Maria protegida (fixo R$ 5,00): Antes R$ 5,00 -> Depois R$ 5,00
+        // Pedro protegido em Prod 2 (R$ 10,00) + fora do desconto em Prod 3 (R$ 25,00): Antes R$ 35,00 -> Depois R$ 35,00
+        // João absorve integralmente R$ 20,00 (40 + 20 = 60 -> 40)
+        composeRule.onNodeWithTag("preview_person_$mariaId").performScrollTo()
+            .assertTextContains("Antes: R$ 5,00", substring = true)
+            .assertTextContains("Depois: R$ 5,00", substring = true)
+        composeRule.onNodeWithTag("preview_person_$pedroId").performScrollTo()
+            .assertTextContains("Antes: R$ 35,00", substring = true)
+            .assertTextContains("Depois: R$ 35,00", substring = true)
+        composeRule.onNodeWithTag("preview_person_$joaoId").performScrollTo()
+            .assertTextContains("Antes: R$ 60,00", substring = true)
+            .assertTextContains("Depois: R$ 40,00", substring = true)
+
+        // 5) Incrementar quantidade de Prod 1 (1x -> 2x) atualiza subtotal (R$ 145,00), mantém desconto de R$ 20,00 (final R$ 125,00)
+        // Maria passa a 2x R$ 5,00 = R$ 10,00 (protegida!); João passa de R$ 100,00 -> R$ 80,00
+        composeRule.onNodeWithTag("selected_inc_$prod1Id").performScrollTo().performClick()
+        waitUiUntil {
+            runCatching {
+                composeRule.onNodeWithTag("preview_person_$mariaId").performScrollTo()
+                    .assertTextContains("Antes: R$ 10,00", substring = true)
+                    .assertTextContains("Depois: R$ 10,00", substring = true)
+                true
+            }.getOrDefault(false)
+        }
+
+        // 6) Salva a nova venda e confere no Room
+        composeRule.onNodeWithTag("pay_method_pix").performScrollTo().performClick()
+        composeRule.onNodeWithTag("save_sale_button").performScrollTo().performClick()
+        waitUiUntil {
+            runBlocking(Dispatchers.IO) { app.saleRepository.observeSales().first().size == 1 }
+        }
+
+        val saved = runBlocking(Dispatchers.IO) { app.saleRepository.observeSales().first().single() }
+        assertEquals(14_500L, saved.calculation.originalSubtotal.rawCents)
+        assertEquals(2_000L, saved.calculation.discountTotal.rawCents)
+        assertEquals(12_500L, saved.calculation.finalAmount.rawCents)
+        assertTrue(saved.calculation.discountConfig is SaleDiscountConfigSnapshot.SelectedProducts)
+        val cfg = saved.calculation.discountConfig as SaleDiscountConfigSnapshot.SelectedProducts
+        assertEquals(setOf(prod1Id, prod2Id), cfg.productIds.toSet())
+        assertEquals(0L, saved.calculation.items.first { it.productId == prod3Id }.discountAmount.rawCents)
+        assertEquals(1_000L, saved.calculation.personTotals.first { it.personId == mariaId }.grossAmount.rawCents)
+        assertEquals(3_500L, saved.calculation.personTotals.first { it.personId == pedroId }.grossAmount.rawCents)
+        assertEquals(8_000L, saved.calculation.personTotals.first { it.personId == joaoId }.grossAmount.rawCents)
+    }
 }

@@ -167,17 +167,18 @@ fun DiscountProductsSelectionBox(
             }
 
             // Ações rápidas: Selecionar todos / Limpar seleção
+            val canSelectAll = !allSelected && totalCount > 0
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
                     onClick = onSelectAll,
-                    enabled = !allSelected && totalCount > 0,
+                    enabled = canSelectAll,
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(
                         width = 1.dp,
-                        color = if (!allSelected) HomeCardNeonBorder.copy(alpha = 0.75f) else GlassNeonBorder15,
+                        color = if (canSelectAll) HomeCardNeonBorder.copy(alpha = 0.75f) else GlassNeonBorder15,
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     modifier = Modifier
@@ -190,7 +191,7 @@ fun DiscountProductsSelectionBox(
                         fontFamily = PlusJakartaSansFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
-                        color = if (!allSelected) Color.White else V19InkMuted,
+                        color = if (canSelectAll) Color.White else V19InkMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -270,8 +271,29 @@ fun DiscountProductsSelectionBox(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                selectedEntries.forEach { (product, qty) ->
+            if (selectedEntries.isEmpty()) {
+                Text(
+                    text = "Adicione produtos à venda acima para selecionar quais receberão o desconto.",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = HomeCardLabelInk.copy(alpha = 0.82f),
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("discount_products_empty"),
+                )
+            } else {
+                if (discountCents == 0L && !targetMissing) {
+                    Text(
+                        text = "Informe acima um valor final menor que o subtotal para aplicar o desconto nos produtos marcados.",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = V19PurpleSoftText.copy(alpha = 0.90f),
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    selectedEntries.forEach { (product, qty) ->
                     val checked = product.id in selectedDiscountProductIds
                     val lineSubtotal = MonetaryRounding.safeMultiplyOrNull(product.price.rawCents, qty) ?: 0L
                     val rowShape = RoundedCornerShape(14.dp)
@@ -345,6 +367,7 @@ fun DiscountProductsSelectionBox(
                                 )
                             }
                         }
+                        }
                     }
                 }
             }
@@ -363,6 +386,7 @@ fun DiscountProtectedPeopleBox(
     onToggleProtectedPerson: (String) -> Unit,
     onAuthorizeUnprotectFixedPerson: (String) -> Unit,
     modifier: Modifier = Modifier,
+    hasProductsInSale: Boolean = true,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var pendingFixedUnprotectPerson by remember { mutableStateOf<DiscountSelectablePersonItem?>(null) }
@@ -371,6 +395,8 @@ fun DiscountProtectedPeopleBox(
     val protectedFixedCount = selectablePeople.count { it.isProtected && it.isFixedUnitProtectedByDefault }
 
     val subtitleText = when {
+        !hasProductsInSale ->
+            "Adicione produtos à venda para listar as pessoas participantes"
         selectablePeople.isEmpty() ->
             "Marque ao menos um produto acima para listar as pessoas participantes"
         protectedCount == 0 ->
@@ -462,7 +488,11 @@ fun DiscountProtectedPeopleBox(
 
                     if (selectablePeople.isEmpty()) {
                         Text(
-                            text = "Nenhum produto selecionado para desconto. Marque os produtos acima para exibir as pessoas participantes.",
+                            text = if (!hasProductsInSale) {
+                                "Adicione produtos à venda e marque ao menos um item acima para escolher quem não receberá o desconto."
+                            } else {
+                                "Nenhum produto selecionado para desconto. Marque os produtos acima para exibir as pessoas participantes."
+                            },
                             fontFamily = PlusJakartaSansFontFamily,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
